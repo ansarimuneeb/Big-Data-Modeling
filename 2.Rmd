@@ -1,0 +1,1756 @@
+---
+title: "Advaned Analytics and Machine Learning Assignment 2, Muhammad Muneeb Ullah Ansari 40426685"
+output: pdf_document
+date: "6th-May-2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The essence of this assignment was to create create multiple predictions models using different techniques and evaluate each of them relative to others. As for the workflow, we were required to do the following things.
+1.	Subset the original data 4 times on a unique criteria. (For my case, subseting done on the basis of field_cat)
+2.	Perform an exploratory analysis of the data accompanied by a zero analysis.
+3.	Make relevant visualization to observe any patterns.
+4.	Create 3 different models for each of for the subsets: Lasso Regression, GAM and a model of your choice; SVM.
+5.	Compare the results of each model, a total of 12 prediction models.
+
+
+## Dataset Generation
+
+Data was subset 4 times on the basis of field_cat. Each subset was as follows:
+
+Subset 1: field_cat = 3
+Subset 2: field_cat = 12 
+Subset 3: field_cat = 5
+Subset 4: field_cat = 19
+
+It was ensured each subset has greater than 1500 observations.
+
+## Codes
+
+Following are all the pre processing up to this point.
+
+```{r Preprocessing, echo=TRUE}
+
+#load libraries
+library(dplyr)
+library(ggplot2)
+library(glmnet)
+library(pROC)
+library(caret)
+library(MASS)
+
+#set seed
+set.seed(1)
+
+#load dataset
+data <- read.csv("C:/Users/User/Downloads/student_merge_platform_business_file_final15.csv")
+
+subdata <- data[data$field_cat >= 1 & data$field_cat <= 20, ]
+
+sum(is.na(subdata))
+summary(subdata)
+
+```
+
+## Zero and NA Analysis
+
+Performing summary statistics revealed that only the following variables had NAs present:
+
+1- Platform
+2- business_id
+3- city
+4- state
+5- postal_code
+6- score
+7- review_count
+8- Gender
+9- field_cat
+10- ZIP.Code
+11- Rural_metropolitan_Desc
+
+Summarizing each of the specific variable by the following code revealed that those variables had 0 values present which 
+are different from having NAs present:
+
+1- CEO_sch_cat
+2- Brnd_Tot_Clms_Services
+3- Othr_Tot_Clms_Services
+4- LIS_Tot_Clms_Services
+5- Opioid_Tot_Clms_Services
+6- Antbtc_Tot_Clms_Services
+
+0 values here are significant as these variables are continuous.
+
+It was also observed that if Business_ID_other variable would have NAs, variables ending with Clms_Services will also have missing values. This implies that presence of NAs is an imputation error and not significant from an interpretation standpoint.
+
+Analysis also revealed that these variables inspite having 0 values had missing values as well displayed as a table in codes below.
+
+``` { r Zero and NA, echo=TRUE}
+
+summary(subdata$CEO_sch_cat)
+boxplot(subdata$CEO_sch_cat)
+sum(subdata$CEO_sch_cat == 0, na.rm = TRUE)
+#0 present
+
+summary(subdata$CEO_grd_yr)
+subdata[is.na(subdata$CEO_grd_yr), ]
+sum(subdata$CEO_grd_yr == 0, na.rm = TRUE)
+
+summary(subdata$Business_ID_other)
+subdata[is.na(subdata$Business_ID_other), ]
+sum(subdata$Business_ID_other == 0, na.rm = TRUE)
+sum(is.na(subdata$Business_ID_other))
+#If this variable is missing, every variable after that is missing
+
+summary(subdata$Tot_Clms_Services)
+subdata[is.na(subdata$Tot_Clms_Services), ]
+sum(subdata$Tot_Clms_Services == 0, na.rm = TRUE)
+
+summary(subdata$Brnd_Tot_Clms_Services)
+subdata[is.na(subdata$Brnd_Tot_Clms_Services), ]
+sum(subdata$Brnd_Tot_Clms_Services == 0, na.rm = TRUE)
+#0 present
+
+summary(subdata$Gnrc_Tot_Clms_Services)
+subdata[is.na(subdata$Gnrc_Tot_Clms_Services), ]
+sum(subdata$Gnrc_Tot_Clms_Services == 0, na.rm = TRUE)
+#some values still present
+
+summary(subdata$Othr_Tot_Clms_Services)
+subdata[is.na(subdata$Othr_Tot_Clms_Services), ]
+sum(subdata$Othr_Tot_Clms_Services == 0, na.rm = TRUE)
+#0 present
+
+summary(subdata$LIS_Tot_Clms_Services)
+subdata[is.na(subdata$LIS_Tot_Clms_Services), ]
+sum(subdata$LIS_Tot_Clms_Services == 0, na.rm = TRUE)
+#0 present
+
+summary(subdata$Opioid_Tot_Clms_Services)
+subdata[is.na(subdata$Opioid_Tot_Clms_Services), ]
+sum(subdata$Opioid_Tot_Clms_Services == 0, na.rm = TRUE)
+#0 present
+
+summary(subdata$Antbtc_Tot_Clms_Services)
+subdata[is.na(subdata$Antbtc_Tot_Clms_Services), ]
+sum(subdata$Antbtc_Tot_Clms_Services == 0, na.rm = TRUE)
+#0 present
+
+# Calculate the number of NA values for each variable
+na_count <- sapply(subdata, function(x) sum(is.na(x)))
+
+# Convert to a data frame
+na_count_df <- data.frame(Variable = names(na_count), NA_Count = na_count)
+
+# Arrange the data frame in descending order of NA count
+na_count_df <- na_count_df %>%
+  arrange(desc(NA_Count)) %>%
+  head(20)  # Select only the top 20
+
+# Print the resulting table
+print(na_count_df)
+
+```
+
+The following was the code executed to observe the number of 0 values for each variable described in the previous code.
+
+```{ r Zero and NA 2, echo=TRUE}
+# Calculate the number of NA values for each variable
+na_count <- sapply(subdata, function(x) sum(is.na(x)))
+
+# Convert to a data frame
+na_count_df <- data.frame(Variable = names(na_count), NA_Count = na_count)
+
+# Arrange the data frame in descending order of NA count
+na_count_df <- na_count_df %>%
+  arrange(desc(NA_Count)) %>%
+  head(20)  # Select only the top 20
+
+# Print the resulting table
+print(na_count_df)
+
+csubdata1 <- na.omit(subdata)
+csubdata2 <- csubdata1[rowSums(csubdata1 == 0) == 0, ]
+
+# Calculate the number of zero values for each variable
+zero_count <- sapply(subdata, function(x) sum(x == 0, na.rm = TRUE))
+
+# Convert to a data frame
+zero_count_df <- data.frame(Variable = names(zero_count), Zero_Count = zero_count)
+
+# Arrange the data frame in descending order of zero count
+zero_count_df <- zero_count_df %>%
+  arrange(desc(Zero_Count)) %>%
+  head(20)  # Select only the top 20
+
+# Print the resulting table
+print(zero_count_df)
+
+```
+
+## Exploratory Visualizations
+
+Following were the visualizations made to observe the fundamental behavior of the variables in the data:
+
+``` { r Visualizations, echo= TRUE}
+
+state_counts <- csubdata1 %>%
+  group_by(state) %>%
+  summarise(Count = n(), .groups = 'drop')
+
+# Generate the bar plot
+ggplot(state_counts, aes(x = state, y = Count, fill = state)) +
+  geom_bar(stat = "identity") +  # Use identity to use the counts as heights directly
+  labs(title = "Count of Unique Observations per State",
+       x = "State", 
+       y = "Count of Observations") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Tilt x-axis labels for better readability
+
+
+###
+
+# Calculate and sort the count of unique observations for each city
+city_counts <- csubdata1 %>%
+  group_by(city) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  arrange(desc(Count)) %>%
+  slice_max(order_by = Count, n = 20)  # Select only the top 20 cities
+
+# Generate the bar plot for the top 20 cities
+ggplot(city_counts, aes(x = reorder(city, -Count), y = Count, fill = city)) +
+  geom_bar(stat = "identity") +  # Use identity to use the counts as heights directly
+  labs(title = "Count of Unique Observations in Top 20 Cities",
+       x = "City", 
+       y = "Count of Observations") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels for better readability
+
+###
+
+# Calculate the count of each gender
+gender_counts <- csubdata1 %>%
+  group_by(Gender) %>%
+  summarise(Count = n(), .groups = 'drop')
+# Generate the bar plot
+ggplot(gender_counts, aes(x = Gender, y = Count, fill = Gender)) +
+  geom_bar(stat = "identity") +  # Use identity to use the counts as heights directly
+  labs(title = "Count of Observations by Gender",
+       x = "Gender", 
+       y = "Count of Observations") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))  # Ensure x-axis labels are readable
+
+###
+
+# Calculate the count of each score
+score_counts <- csubdata1 %>%
+  group_by(score) %>%
+  summarise(Count = n(), .groups = 'drop')
+
+# Generate the bar plot
+ggplot(score_counts, aes(x = as.factor(score), y = Count, fill = as.factor(score))) +
+  geom_bar(stat = "identity") +  # Use identity to use the counts as heights directly
+  labs(title = "Count of Observations by Score",
+       x = "Score", 
+       y = "Count of Observations") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Tilt x-axis labels for better readability
+
+
+
+```
+
+From the following visualizations, the following are key observations:
+
+1- The 3 key states of FL, AZ and PA dominated majority of the observations.
+
+The data suggests a geographic distribution or possibly the dataset's focus or origin might be skewed towards certain regions, notably Florida.
+
+This distribution could reflect the nature of the data collection, the regional focus of the study or business operations, or possibly regional population densities if the data is related to demographics or consumer behavior.
+
+Analysts might explore why some states have more observations. Factors could include population size, market focus, or the presence of specific industries or services.
+
+For states with very low counts, it may be important to consider if there is under representation or data collection issues that need to be addressed.
+
+2- Cities of Saint Petersburg and Tucson had the significant majority.
+
+The significant lead of Petersburg might suggest a geographical or demographic focus in data collection, possibly due to the city’s larger population, more extensive data gathering infrastructure, or specific study/business interests centered in that area.
+
+The relatively low counts in many other cities might indicate either a balanced spread of minor data collection across these regions or potentially the focus of a study/business being less pronounced in these areas
+
+3- The number of males were more than double compared to females.
+
+The skew in data towards males may impact analytical outcomes and decision-making processes that rely on this dataset. For example, if the dataset is used to understand consumer preferences, male preferences might be overrepresented.
+
+4- Most of the scores received were between 5 where the towering score was of 4.5, scores of 1 and 1.5 were a minority implying that in general the sentiments were positive.
+
+The scores around 3, 2.5, and 4 have higher frequencies, indicating a central tendency around these values in your dataset. This could suggest that average or middle-range scores are more common among the observed subjects or entities.
+
+The lower count of extreme values (1, 1.5, 5) suggests that very high or very low scores are less common. This might indicate that conditions or criteria to achieve such scores are strict or challenging, depending on the context of what these scores represent (e.g., ratings, performance measures).
+
+## Dummy Coding
+
+The following code was executed to dummy code all variables except continuous variables. The variables encoded had their original column removed as the data set was to ultimately contain only numeric data.
+
+```{r Dummy Coding, echo= TRUE}
+
+library(fastDummies)
+
+all_columns <- names(subdata)
+exclude_columns <- c("score", "review_count", "Tot_Clms_Services", "Brnd_Tot_Clms_Services", 
+                     "Gnrc_Tot_Clms_Services", "Othr_Tot_Clms_Services", "LIS_Tot_Clms_Services", 
+                     "Opioid_Tot_Clms_Services", "Antbtc_Tot_Clms_Services")
+categorical_columns <- setdiff(all_columns, exclude_columns)
+
+dsubdata <- dummy_cols(subdata, 
+              select_columns = categorical_columns, 
+              remove_selected_columns = TRUE)
+
+
+```
+
+The following code was executed to form subsets based on the following criteria:
+
+Subset 1: field_cat = 3
+Subset 2: field_cat = 12 
+Subset 3: field_cat = 5
+Subset 4: field_cat = 19
+
+```{r Initial Subsetting, echo=TRUE}
+#field_cat_3, 12, 5,19
+
+vdata1 <- dsubdata[dsubdata$field_cat_3 == 1, ]
+
+vdata2 <- dsubdata[dsubdata$field_cat_12 == 1, ]
+
+vdata3 <- dsubdata[dsubdata$field_cat_5 == 1, ]
+
+vdata4 <- dsubdata[dsubdata$field_cat_19 == 1, ]
+
+```
+## Correlations within subsets
+
+To get an idea of what variables might be correlated with the target variable score in each subset, the quickest way is to calculate correlations for all variables. The following are the codes used to calculate correlations for each of the 4 subsets.
+
+``` {r Correlations, echo= TRUE}
+library(dplyr)
+
+correlations1 <- cor(vdata1, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_df1 <- as.data.frame(as.table(correlations1))
+
+cor_df1 <- cor_df1 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_df1 <- cor_df1 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_df1) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_df1)
+
+#mutually exclusive postal codes and other simmilar variables
+#same business id with different postal codes, implies business ids operate from more than one location
+#Usually observations with greater counts are resulting in marginally greater correlations compared to similar variables
+#Visualizations can only be made to identify what business IDs are present in what specific states for operations
+
+#####
+
+correlations2 <- cor(vdata2, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_df2 <- as.data.frame(as.table(correlations2))
+
+cor_df2 <- cor_df2 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_df2 <- cor_df2 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_df2) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_df2)
+
+#Talk about zero standard deviation
+
+######
+
+correlations3 <- cor(vdata3, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_df3 <- as.data.frame(as.table(correlations3))
+
+cor_df3 <- cor_df3 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_df3 <- cor_df3 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_df3) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_df3)
+
+
+######
+
+correlations4 <- cor(vdata4, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_df4 <- as.data.frame(as.table(correlations4))
+
+cor_df4 <- cor_df4 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_df4 <- cor_df4 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_df4) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_df4)
+
+#Certain variables have identical correlations
+
+```
+
+Observations from the correlations of subset 1:
+
+The highest positive correlation is with postal_code_33710 (0.228), suggesting a mild positive relationship between score and this postal code. This could mean that higher scores are somewhat more frequent in this postal code.
+Other postal codes like 33707, 33701, and 33714 also show positive correlations, although they are weaker.
+
+The most negative correlations are found with postal_code_33712 and 33713. A negative correlation here suggests that higher scores are less frequently observed in these postal codes.
+Other entities like Tot_Clms_Services, Brnd_Tot_Clms_Services, Gnrc_Tot_Clms_Services, and various business IDs show exactly the same negative correlation of -0.096818835, indicating that these features might be less associated with higher scores or perhaps more associated with lower scores.
+
+A large number of correlations are NA, particularly for different business IDs and platform identifiers. This often means that there is insufficient variability in the data for those variables (for example, if all entries for a business ID are the same across all observations in your subset).
+
+
+Observations from the correlations of subset 2:
+
+Variables listed have a constant value (the same value for all observations), the correlation cannot be computed. tIn hindsight still we will continue with out analysis with these results as we already have 3 other subsets which are non-NA correlations, it will be interesting to see the effects of prediction models on this subset.
+
+In cor_df1, some variables also had NA correlations, but others had valid correlation coefficients. This suggests that the previous dataset had some variability and fewer issues with data integrity or formatting that allowed for correlation calculations.
+
+Observations from the correlations of subset 3: 
+
+The first 9 entries all show a very high correlation of 0.9341987 with the "score." This suggests a very strong linear relationship between these variables and the score. Variables include specific business IDs, city names, states, ZIP codes, gender, CEO school categories, graduation years, and a specific rural/metropolitan descriptor.
+
+The correlation for review_count is notably lower than the first set at 0.1633397, indicating a moderate positive relationship with the score.
+
+Entries like city_Wesley Chapel and its associated ZIP codes show a correlation of 0.0000000, suggesting no linear relationship with the score.
+
+Correlations become very negative for certain variables (-0.7385489, -0.9341987), indicating a strong inverse relationship. These might involve different types of services and other business-related identifiers.
+
+A substantial portion of the data shows NA correlations, similar to previous datasets. This often indicates insufficient data variability, presence of constant values, or issues with data completeness or formatting.
+
+ Like in previous correlations (cor_df1 and cor_df2), there are a few variables that show very strong correlations with the score. The magnitude and implication of these correlations should be further investigated to understand the underlying reasons.
+ 
+Observations from the correlations of subset 4:
+
+Some variables show positive correlations with the score, such as Gender_F, state_NV, business_id_1629412382, and specific ZIP codes. These positive correlations suggest that these variables positively influence the score, with values like 0.240 for Gender_F and various others ranging around 0.179 to 0.215.
+
+There are several notable negative correlations, especially towards the bottom of the list, where geographic locations and certain business identifiers exhibit a strong negative influence on the score. The values range from mild negatives around -0.015 to stronger negatives beyond -0.200, showing a strong inverse relationship.
+
+A large portion of the data, especially regarding certain business IDs and locations, shows a near-zero correlation, indicating minimal linear relationship with the score.
+
+As observed in previous datasets, specific business IDs, geographic locations, and CEO-related variables show strong correlations, either positive or negative. This pattern suggests consistent areas of influence on the score across different datasets.
+
+## Visualizations to understand subsets
+
+Broadly visualizations imply that there are some variables that are mutually exclusive specifically variables that start the same way example potal_codes
+
+We can see that same business_id labels are occuring in different postal codes. This implies that dataset contains observations from businesses that operate from more than one location.
+
+Observations with greater counts are the same once were the correlations are marginally greater compared to similar variables or variables having the same starting name.
+
+Some visualizations can be made to identify what business IDs are present in which specific states of operations for a more strategic approach to analytics.
+
+Scatter plot of Postal Code vs Score for Subset 1: 
+Distinct Score Levels: The plot shows distinct horizontal lines at each score level from 1 through 5, indicating that each score level is associated with specific values of the postal code.
+Non-linear Relationship: The data points are clustered at specific postal code values corresponding to each score. This suggests a non-linear relationship or a categorical-like behavior of the postal code variable.
+Data Distribution: The absence of data points between the defined score levels (e.g., between 2 and 3) suggests that the scores are categorical or discrete in nature rather than continuous.
+Potential Outliers: There is a concentration of scores at the extremes of the postal code values (near 0 and 1). This could indicate outliers or specific circumstances affecting scores at these postal codes.
+
+Scatter plot of Business ID vs Postal Code for Subset 1:
+The result is very simmilar to the first visualization of Postal Code vs Score. However in this case present of a value of Business ID 1902048259 could imply the presence of this ID in the Postal Code 33710.
+
+Bar plot of 1s in Business ID 1902048259 and Postal Code 33710:
+The high count of "1s" for the business ID could suggest a higher relevance or activity level of this business ID within the dataset's context. This might imply that this particular business ID is more central or significant to the dataset's underlying story or the analysis objectives. The lower frequency of "1s" for the postal code might imply that this particular postal code is less involved in the data set's primary activities or conditions being measured.
+
+Bar plot of 1 counts for two similar Postal Code labels:
+The higher count in postal code 33710 suggests that this area may have a higher significance or activity level related to the dataset's focus, which could be anything from demographic occurrences, sales activity, service requests.Comparing these counts can be valuable in geographic or demographic analysis, where understanding the concentration of certain activities or characteristics by location is crucial.
+
+
+
+
+```{r Subset Visualizations, echo=TRUE}
+library(ggplot2)
+
+#mutually exclusive postal codes and other simmilar variables
+#same business id with different postal codes, implies business ids operate from more than one location
+#Usually observations with greater counts are resulting in marginally greater correlations compared to similar variables
+#Visualizations can only be made to identify what business IDs are present in what specific states for operations
+
+scatter_plot1 <- ggplot(vdata1, aes(x = postal_code_33710, y = score)) +
+  geom_point() +  # Add points
+  labs(x = "Postal Code 33710", y = "Score", title = "Scatter Plot of Postal Code vs. Score") +
+  theme_minimal()  # Use a minimal theme for a clean look
+
+print(scatter_plot1)
+
+
+##
+ggplot(vdata1, aes(x = business_id_1902048259, y = postal_code_33710)) +
+  geom_point() +  # This adds the scatter plot points
+  labs(title = "Scatter Plot of Business ID vs. Postal Code",
+       x = "Business ID 1902048259", 
+       y = "Postal Code 33710") +
+  theme_minimal()  # This applies a minimalistic theme to the plot
+
+##
+
+# Sum up the number of 1s in each specified variable
+counts <- data.frame(
+  Variable = c("business_id_1902048259", "postal_code_33710"),
+  Count = c(sum(vdata1$business_id_1902048259 == 1, na.rm = TRUE),
+            sum(vdata1$postal_code_33710 == 1, na.rm = TRUE))
+)
+
+# Generate the bar plot
+ggplot(counts, aes(x = Variable, y = Count, fill = Variable)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.7) +
+  labs(title = "Count of 1s in Business ID and Postal Code",
+       x = "Variable",
+       y = "Count of 1s") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Assuming vdata1 is your data frame and it contains the variables 'postal_code_33710' and 'postal_code_33707'
+counts2 <- data.frame(
+  Variable = c("postal_code_33710", "postal_code_33707"),
+  Count = c(sum(vdata1$postal_code_33710 == 1, na.rm = TRUE),
+            sum(vdata1$postal_code_33707 == 1, na.rm = TRUE))
+)
+
+# Generate the bar plot with tilted x-axis labels
+ggplot(counts2, aes(x = Variable, y = Count, fill = Variable)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.7) +
+  labs(title = "Count of 1s in Selected Postal Codes",
+       x = "Variable",
+       y = "Count of 1s") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") +  # Adds color to the bars
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Create a scatter plot using ggplot2
+scatter_plot1.1 <- ggplot(vdata1, aes(x = postal_code_33710, y = postal_code_33707)) +
+  geom_point() +  # Add points to plot
+  labs(x = "Postal Code 33710", y = "Postal Code 33707", title = "Scatter Plot of Postal Codes") +
+  theme_minimal()  # Use a minimal theme for a clean look
+
+# Print the plot
+print(scatter_plot1.1)
+
+####
+
+scatter_plot3 <- ggplot(vdata3, aes(x = business_id_1326282864, y = score)) +
+  geom_point() +  # Add points
+  labs(x = "Business ID 1326282864", y = "Score", title = "Scatter Plot of Business ID vs. Score") +
+  theme_minimal()  # Use a minimal theme for a clean look
+
+print(scatter_plot3)
+#similar behavior for variables in vdata3 with +0.9 correlation
+
+###
+
+scatter_plot4 <- ggplot(vdata4, aes(x = Gender_F, y = score)) +
+  geom_point() +  # Add points
+  labs(x = "Gender F", y = "Score", title = "Scatter Plot of Gender F vs. Score") +
+  theme_minimal()  # Use a minimal theme for a clean look
+
+print(scatter_plot4)
+
+###
+
+
+```
+
+## Preprocessing for Lasso Regression
+
+Before performing Lasso, new subsets were made so observations could be large enough for interpretation.
+
+The subsets were as follows:
+
+Ldata1 : field_cat 1-7
+Ldata2 : field_cat 8-11
+Ldata3 : field_cat 12-17
+Ldata4 : field_cat 18-20
+
+Out of all the variables present in the dataset, the following were continous variables which needed to be scaled before running Lasso Regression.
+
+Tot_Clms_Services
+Brnd_Tot_Clms_Services
+Gnrc_Tot_Clms_Services
+Othr_Tot_Clms_Services
+LIS_Tot_Clms_Services 
+Opioid_Tot_Clms_Services
+Antbtc_Tot_Clms_Services
+
+All the Lambda values for each Lasso Model were Cross Validated 10 times.
+Multinomial family was used instead if Binomial family as the response variable score had more that 2 classes.
+NAs present in the dataset were imputed with 0s making them better for analysis rather than removing observations.
+Removing NA observations and then performing Lasso would have resulted in the selection of a HUGE subset as data has alot of missing value, data integrity is crucial.
+
+The following is the code for pre-processing required for Lasso:
+
+
+```{r Lasso Preprocessing, echo=TRUE}
+
+#Lasso
+
+library(glmnet)
+
+#Ldata1 : field_cat 1-7
+Ldata1 <- dsubdata[dsubdata$field_cat_3 == 1 | dsubdata$field_cat_1 == 1 | dsubdata$field_cat_2 == 1 | dsubdata$field_cat_4 == 1 |
+                   dsubdata$field_cat_5 == 1 | dsubdata$field_cat_6 == 1 | dsubdata$field_cat_7 == 1, ]
+library(caret)
+columns_to_scale <- c("review_count", "Tot_Clms_Services", "Brnd_Tot_Clms_Services", 
+                      "Gnrc_Tot_Clms_Services", "Othr_Tot_Clms_Services", "LIS_Tot_Clms_Services", 
+                      "Opioid_Tot_Clms_Services", "Antbtc_Tot_Clms_Services")
+
+preProcValues1 <- preProcess(Ldata1[, columns_to_scale], method = c("range"))
+
+Ldata1[, columns_to_scale] <- predict(preProcValues1, Ldata1[, columns_to_scale])
+
+head(Ldata1[, columns_to_scale])
+
+print(Ldata1$review_count)
+
+#Ldata2 : field_cat 8-11
+Ldata2 <- dsubdata[dsubdata$field_cat_8 == 1 | dsubdata$field_cat_9 == 1 | dsubdata$field_cat_10 == 1 | dsubdata$field_cat_11 == 1, ]
+
+preProcValues2 <- preProcess(Ldata2[, columns_to_scale], method = c("range"))
+
+Ldata2[, columns_to_scale] <- predict(preProcValues2, Ldata2[, columns_to_scale])
+#no variation in Brnd_Tot_Clms_Services, Othr_Tot_Clms_Services, Opioid_Tot_Clms_Services
+
+head(Ldata2[, columns_to_scale])
+
+print(Ldata2$Tot_Clms_Services)
+
+#Ldata3 : field_cat 12-17
+Ldata3 <- dsubdata[dsubdata$field_cat_12 == 1 | dsubdata$field_cat_13 == 1 | dsubdata$field_cat_14 == 1 | dsubdata$field_cat_15 == 1 
+                   | dsubdata$field_cat_16 == 1| dsubdata$field_cat_17 == 1, ]
+
+
+preProcValues3 <- preProcess(Ldata3[, columns_to_scale], method = c("range"))
+
+Ldata3[, columns_to_scale] <- predict(preProcValues3, Ldata3[, columns_to_scale])
+#No variation for Othr_Tot_Clms_Services
+
+head(Ldata3[, columns_to_scale])
+
+print(Ldata3$Tot_Clms_Services)
+
+
+#Ldata4 : field_cat 18-20
+Ldata4 <- dsubdata[dsubdata$field_cat_18 == 1 | dsubdata$field_cat_19 == 1 | dsubdata$field_cat_20 == 1, ]
+
+
+preProcValues4 <- preProcess(Ldata4[, columns_to_scale], method = c("range"))
+
+Ldata4[, columns_to_scale] <- predict(preProcValues4, Ldata4[, columns_to_scale])
+
+head(Ldata4[, columns_to_scale])
+
+print(Ldata4$Tot_Clms_Services)
+
+```
+
+## Lasso Regression 1
+
+The selected best lambda value is approximately 0.0667. Lambda in Lasso regression controls the amount of shrinkage: the larger the lambda, the more features are driven to zero. This lambda value suggests that the model requires some regularization to prevent overfitting but not to an extreme extent where all coefficients are pushed to zero.
+
+The reported accuracy is approximately 2.96%, which is extremely low. This suggests that the model does not perform well at all in predicting the outcome based on the input features under the current configuration and data. This might indicate issues such as not enough predictive features, poor model fit, or the need for a different model entirely.
+
+All non-zero coefficients in the model are shown to have a value of approximately -1.4959. Since these coefficients correspond to various business IDs and other variables, this suggests that these features have a uniform negative influence on the response variable when their value is 1. 
+
+
+```{r Lasso Regression 1, echo= TRUE}
+
+#Lasso 1
+
+Ldata1 <- Ldata1 %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+sum(is.na(Ldata1))
+#At this point just replace NAs with 0. Because if we only subset data such that all observations had no NAs, our subset will be a huge chunk of the original data
+
+##############################
+
+# Extract the response variable 'score' from Ldata1
+y1 <- Ldata1$score
+
+# Set the random seed for reproducibility
+set.seed(4200)
+
+# Determine the number of rows in Ldata1
+n_rows1 <- nrow(Ldata1)
+
+# Sampling indices for the training data, using 80% of the data
+train.l1 <- sample(1:n_rows1, size = floor(0.8 * n_rows1))
+
+# Define test indices as those not in the training set
+test.l1 <- setdiff(1:n_rows1, train.l1)
+
+# Create a grid of lambda values for regularization
+grid1 <- 10^seq(10, -2, length = 100)
+
+# Convert Ldata1 from data frame to matrix, excluding the response variable column
+matrixLdata1 <- as.matrix(Ldata1[, -which(names(Ldata1) == "score")])
+
+# Fit the model using cv.glmnet with the training data
+cv_model1 <- cv.glmnet(matrixLdata1[train.l1,], y1[train.l1], family="multinomial", alpha=1, type.measure = "deviance", nfolds = 10)
+best_lambda1 <- cv_model1$lambda.min
+lasso_coef1 <- predict(cv_model1, type = "coefficients", s = best_lambda1)
+
+# Fit final model with selected best lambda
+lasso.mod1 <- glmnet(matrixLdata1[train.l1, ], y1[train.l1], family="multinomial", type.measure="deviance", alpha=1, lambda=best_lambda1)
+
+# Get predictions as probabilities for each class
+lasso.pred1 <- predict(lasso.mod1, s = best_lambda1, newx = matrixLdata1[test.l1,], type = "response")
+
+# Convert probabilities to class labels by finding the class with the highest probability
+pred_class1 <- apply(lasso.pred1, 1, which.max)
+
+# Map the response variable and the predictions to handle potential unmapped values properly
+# Ensure all classes are covered in training and testing
+all_classes1 <- unique(c(y1[train.l1], y1[test.l1]))
+class_mapping1 <- setNames(seq_along(all_classes1), all_classes1)
+y1_mapped <- as.integer(factor(y1, levels = names(class_mapping1), labels = class_mapping1))
+
+# Recalculate the accuracy ensuring all mapped values are used
+accuracy1 <- mean(pred_class1 == y1_mapped[test.l1], na.rm = TRUE)
+
+# Output the results
+print(paste("Best Lambda:", best_lambda1))
+print(paste("Accuracy:", accuracy1))
+
+##############
+
+# Assuming that the glmnet package and the necessary data from previous parts are already loaded
+
+out1 <- glmnet(matrixLdata1, y1, alpha=1, family="multinomial", type.measure="deviance", lambda=grid1)
+
+print(out1)
+
+########################
+
+# Inspect the structure of the lasso_coef1 to understand how to access the coefficients
+print(class(lasso_coef1))
+print(str(lasso_coef1))
+
+# If lasso_coef1 is a list containing a dgCMatrix, let's properly access it
+# Assuming the coefficients are stored in a dgCMatrix within the first element of the list
+if (is.list(lasso_coef1) && "dgCMatrix" %in% class(lasso_coef1[[1]])) {
+  # Extract the dgCMatrix
+  coef_matrix1 <- lasso_coef1[[1]]
+  # Convert to a vector
+  coef_vector1 <- as.vector(coef_matrix1@x)
+  # Extract names
+  variable_names1 <- rownames(coef_matrix1)
+  # Create a data frame
+  coef_df1 <- data.frame(variable = variable_names1, coefficient = coef_vector1, row.names = NULL)
+  # Filter out zero coefficients
+  coef_df1 <- coef_df1[coef_df1$coefficient != 0, ]
+  # Print the data frame
+  print(coef_df1)
+  # Extract and print the top 10 significant coefficients
+  top10_1 <- head(coef_df1[order(-abs(coef_df1$coefficient)), ], 10)
+  print(top10_1)
+} else {
+  print("The structure of the coefficients is not as expected.")
+}
+
+##############################################
+
+```
+
+### Lasso Regression 2
+
+The results of the second Lasso regression (lasso 2) are similar to those of the first one (lasso 1), but with some differences in the best lambda value, accuracy, and coefficient values. Here's a detailed interpretation and comparison of both regressions:
+
+Lasso 1: Best Lambda is approximately 0.0667.
+Lasso 2: Best Lambda is approximately 0.0405.
+The smaller lambda in lasso 2 suggests that less regularization was required compared to lasso 1, potentially because the second model's data might have been slightly less prone to overfitting or the model benefited from retaining more complexity.
+
+Lasso 1: Accuracy is extremely low at about 2.96%.
+Lasso 2: Slightly higher but still very low accuracy at about 7.36%.
+The accuracy remains low in both models, which still indicates poor performance. However, lasso 2 shows a slight improvement, suggesting some differences in data or model setup might be slightly more effective, though still far from satisfactory.
+
+Lasso 1 Coefficients: Uniform value of about -1.4959 for all non-zero coefficients.
+Lasso 2 Coefficients: Uniform value of about -2.3707 for all non-zero coefficients.
+In both models, all non-zero coefficients are negative and exhibit uniformity across the board. The magnitude of coefficients in lasso 2 is larger, indicating a stronger regularization effect despite the smaller lambda. This might suggest differences in the scale of input features or the response variable between the two datasets.
+
+Both models show 0% deviance explained until the very end of the regularization path, where there is a sudden jump to about 1.91% and 1.81% in lasso 1 and lasso 2 respectively.
+
+
+
+```{r Lasso Regression 2, echo=TRUE}
+#Lasso 2
+
+#################
+
+Ldata2 <- Ldata2 %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+sum(is.na(Ldata2))
+#At this point just replace NAs with 0. Because if we only subset data such that all observations had no NAs, our subset will be a huge chunk of the original data
+
+##############################
+
+# Extract the response variable 'score' from Ldata2
+y2 <- Ldata2$score
+
+# Set the random seed for reproducibility
+set.seed(4200)
+
+# Determine the number of rows in Ldata2
+n_rows2 <- nrow(Ldata2)
+
+# Sampling indices for the training data, using 80% of the data
+train.l2 <- sample(1:n_rows2, size = floor(0.8 * n_rows2))
+
+# Define test indices as those not in the training set
+test.l2 <- setdiff(1:n_rows2, train.l2)
+
+# Create a grid of lambda values for regularization
+grid2 <- 10^seq(10, -2, length = 100)
+
+# Convert Ldata2 from data frame to matrix, excluding the response variable column
+matrixLdata2 <- as.matrix(Ldata2[, -which(names(Ldata2) == "score")])
+
+# Fit the model using cv.glmnet with the training data
+cv_model2 <- cv.glmnet(matrixLdata2[train.l2,], y2[train.l2], family="multinomial", alpha=1, type.measure = "deviance", nfolds = 10)
+best_lambda2 <- cv_model2$lambda.min
+lasso_coef2 <- predict(cv_model2, type = "coefficients", s = best_lambda2)
+
+# Fit final model with selected best lambda
+lasso.mod2 <- glmnet(matrixLdata2[train.l2, ], y2[train.l2], family="multinomial", type.measure="deviance", alpha=1, lambda=best_lambda2)
+
+# Get predictions as probabilities for each class
+lasso.pred2 <- predict(lasso.mod2, s = best_lambda2, newx = matrixLdata2[test.l2,], type = "response")
+
+# Convert probabilities to class labels by finding the class with the highest probability
+pred_class2 <- apply(lasso.pred2, 1, which.max)
+
+# Map the response variable and the predictions to handle potential unmapped values properly
+# Ensure all classes are covered in training and testing
+all_classes2 <- unique(c(y2[train.l2], y2[test.l2]))
+class_mapping2 <- setNames(seq_along(all_classes2), all_classes2)
+y2_mapped <- as.integer(factor(y2, levels = names(class_mapping2), labels = class_mapping2))
+
+# Recalculate the accuracy ensuring all mapped values are used
+accuracy2 <- mean(pred_class2 == y2_mapped[test.l2], na.rm = TRUE)
+
+# Output the results
+print(paste("Best Lambda:", best_lambda2))
+print(paste("Accuracy:", accuracy2))
+
+##############
+
+# Assuming that the glmnet package and the necessary data from previous parts are already loaded
+
+out2 <- glmnet(matrixLdata2, y2, alpha=1, family="multinomial", type.measure="deviance", lambda=grid2)
+
+print(out2)
+
+########################
+
+# Inspect the structure of the lasso_coef2 to understand how to access the coefficients
+print(class(lasso_coef2))
+print(str(lasso_coef2))
+
+# If lasso_coef2 is a list containing a dgCMatrix, let's properly access it
+# Assuming the coefficients are stored in a dgCMatrix within the first element of the list
+if (is.list(lasso_coef2) && "dgCMatrix" %in% class(lasso_coef2[[1]])) {
+  # Extract the dgCMatrix
+  coef_matrix2 <- lasso_coef2[[1]]
+  # Convert to a vector
+  coef_vector2 <- as.vector(coef_matrix2@x)
+  # Extract names
+  variable_names2 <- rownames(coef_matrix2)
+  # Create a data frame
+  coef_df2 <- data.frame(variable = variable_names2, coefficient = coef_vector2, row.names = NULL)
+  # Filter out zero coefficients
+  coef_df2 <- coef_df2[coef_df2$coefficient != 0, ]
+  # Print the data frame
+  print(coef_df2)
+  # Extract and print the top 10 significant coefficients
+  top10_2 <- head(coef_df2[order(-abs(coef_df2$coefficient)), ], 10)
+  print(top10_2)
+} else {
+  print("The structure of the coefficients is not as expected.")
+}
+
+
+
+```
+
+### Lasso Regression 3
+
+Best Lambda
+
+Lasso 1: 0.0667
+Lasso 2: 0.0405
+Lasso 3: 0.0651
+
+The lambda value for lasso 3 is closer to that of lasso 1, suggesting a similar level of regularization, which indicates a balance between the complexity of the model and the prevention of overfitting similar to the first model.
+
+Model Accuracy
+
+Lasso 1: 2.96%
+Lasso 2: 7.36%
+Lasso 3: 13.47%
+
+There is a significant improvement in the accuracy of lasso 3 compared to the previous two models. This nearly doubling of accuracy from lasso 2 to lasso 3 indicates better predictive performance, possibly due to more effective feature selection or more relevant data inputs.
+
+The coefficients in lasso 3 are uniformly valued at -1.8481 across non-zero coefficients, similar in behavior to the previous models but with a smaller absolute magnitude compared to lasso 2. This suggests some level of consistency in how the Lasso regularization is impacting the model's coefficients, with lasso 3 showing less aggressive penalization, which might be reflective of a better fit or a different scale in the dataset variables.
+
+Similar to previous models, lasso 3 shows zero percent deviance explained until the very end of the regularization path, which is a recurring issue indicating potential underfitting. However, the final percentage of deviance explained is 1.49%, a slight decrease compared to the previous models, suggesting a slight decrease in model fit in this context despite better accuracy.
+
+```{r Lasso Regression 3, echo=TRUE}
+# Lasso 3
+
+#################
+
+Ldata3 <- Ldata3 %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+sum(is.na(Ldata3))
+#At this point just replace NAs with 0. Because if we only subset data such that all observations had no NAs, our subset will be a huge chunk of the original data
+
+##############################
+
+# Extract the response variable 'score' from Ldata3
+y3 <- Ldata3$score
+
+# Set the random seed for reproducibility
+set.seed(4200)
+
+# Determine the number of rows in Ldata3
+n_rows3 <- nrow(Ldata3)
+
+# Sampling indices for the training data, using 80% of the data
+train.l3 <- sample(1:n_rows3, size = floor(0.8 * n_rows3))
+
+# Define test indices as those not in the training set
+test.l3 <- setdiff(1:n_rows3, train.l3)
+
+# Create a grid of lambda values for regularization
+grid3 <- 10^seq(10, -2, length = 100)
+
+# Convert Ldata3 from data frame to matrix, excluding the response variable column
+matrixLdata3 <- as.matrix(Ldata3[, -which(names(Ldata3) == "score")])
+
+# Fit the model using cv.glmnet with the training data
+cv_model3 <- cv.glmnet(matrixLdata3[train.l3,], y3[train.l3], family="multinomial", alpha=1, type.measure = "deviance", nfolds = 10)
+best_lambda3 <- cv_model3$lambda.min
+lasso_coef3 <- predict(cv_model3, type = "coefficients", s = best_lambda3)
+
+# Fit final model with selected best lambda
+lasso.mod3 <- glmnet(matrixLdata3[train.l3, ], y3[train.l3], family="multinomial", type.measure="deviance", alpha=1, lambda=best_lambda3)
+
+# Get predictions as probabilities for each class
+lasso.pred3 <- predict(lasso.mod3, s = best_lambda3, newx = matrixLdata3[test.l3,], type = "response")
+
+# Convert probabilities to class labels by finding the class with the highest probability
+pred_class3 <- apply(lasso.pred3, 1, which.max)
+
+# Map the response variable and the predictions to handle potential unmapped values properly
+# Ensure all classes are covered in training and testing
+all_classes3 <- unique(c(y3[train.l3], y3[test.l3]))
+class_mapping3 <- setNames(seq_along(all_classes3), all_classes3)
+y3_mapped <- as.integer(factor(y3, levels = names(class_mapping3), labels = class_mapping3))
+
+# Recalculate the accuracy ensuring all mapped values are used
+accuracy3 <- mean(pred_class3 == y3_mapped[test.l3], na.rm = TRUE)
+
+# Output the results
+print(paste("Best Lambda:", best_lambda3))
+print(paste("Accuracy:", accuracy3))
+
+##############
+
+# Assuming that the glmnet package and the necessary data from previous parts are already loaded
+
+out3 <- glmnet(matrixLdata3, y3, alpha=1, family="multinomial", type.measure="deviance", lambda=grid3)
+
+print(out3)
+
+########################
+
+# Inspect the structure of the lasso_coef1 to understand how to access the coefficients
+print(class(lasso_coef3))
+print(str(lasso_coef3))
+
+# If lasso_coef1 is a list containing a dgCMatrix, let's properly access it
+# Assuming the coefficients are stored in a dgCMatrix within the first element of the list
+if (is.list(lasso_coef3) && "dgCMatrix" %in% class(lasso_coef3[[1]])) {
+  # Extract the dgCMatrix
+  coef_matrix3 <- lasso_coef3[[1]]
+  # Convert to a vector
+  coef_vector3 <- as.vector(coef_matrix3@x)
+  # Extract names
+  variable_names3 <- rownames(coef_matrix3)
+  # Create a data frame
+  coef_df3 <- data.frame(variable = variable_names3, coefficient = coef_vector3, row.names = NULL)
+  # Filter out zero coefficients
+  coef_df3 <- coef_df3[coef_df3$coefficient != 0, ]
+  # Print the data frame
+  print(coef_df3)
+  # Extract and print the top 10 significant coefficients
+  top10_3 <- head(coef_df3[order(-abs(coef_df3$coefficient)), ], 10)
+  print(top10_3)
+} else {
+  print("The structure of the coefficients is not as expected.")
+}
+
+```
+
+
+## Lasso Regression 4
+
+Best Lambda
+
+Lasso 3: 0.0651
+Lasso 4: 0.0442
+
+For lasso 4, the best lambda is slightly lower than that for lasso 3, which suggests less regularization is being applied. This can sometimes indicate that the model is capturing more complex relationships in the data without overfitting.
+
+Accuracy
+
+Lasso 3: 13.47%
+Lasso 4: 14.89%
+
+There's a small improvement in the accuracy from lasso 3 to lasso 4. Although these accuracies are still relatively low, the gradual increase suggests that the model adjustments or data transformations made prior to lasso 4 might be slightly more effective.
+
+The coefficients from lasso 4 are consistently at -2.3195 across non-zero coefficients. This uniformity, similar to the previous models, again reflects the effect of the Lasso regularization in reducing the model complexity by shrinking the coefficients towards zero. The value is higher in magnitude compared to lasso 3 (-1.8481), indicating stronger effects of the retained predictors in lasso 4.
+
+Model Fit (% Dev)
+
+Lasso 3: The maximum deviance explained was 1.49%
+Lasso 4: The maximum deviance explained increased slightly to 1.56%
+The deviance explained by lasso 4 shows a slight improvement. Despite these small increments, the overall deviance explained remains very low, which could suggest that either the models are not well-suited to the data or the data itself lacks strong predictive signals.
+
+All models show that almost no deviance is explained until the very end of the lambda path, where regularization is nearly negligible.
+
+The consistent pattern of coefficients across different models, where many coefficients are pushed to the same value, indicates that while Lasso is effectively reducing overfitting, it might also be underfitting by not allowing the model enough flexibility to capture more complex patterns in the data.
+
+```{r Lasso Regression 4, echo=TRUE}
+
+#Lasso 4
+######
+
+Ldata4 <- Ldata4 %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+sum(is.na(Ldata4))
+#At this point just replace NAs with 0. Because if we only subset data such that all observations had no NAs, our subset will be a huge chunk of the original data
+
+##############################
+
+# Extract the response variable 'score' from Ldata4
+y4 <- Ldata4$score
+
+# Set the random seed for reproducibility
+set.seed(4200)
+
+# Determine the number of rows in Ldata4
+n_rows4 <- nrow(Ldata4)
+
+# Sampling indices for the training data, using 80% of the data
+train.l4 <- sample(1:n_rows4, size = floor(0.8 * n_rows4))
+
+# Define test indices as those not in the training set
+test.l4 <- setdiff(1:n_rows4, train.l4)
+
+# Create a grid of lambda values for regularization
+grid4 <- 10^seq(10, -2, length = 100)
+
+# Convert Ldata4 from data frame to matrix, excluding the response variable column
+matrixLdata4 <- as.matrix(Ldata4[, -which(names(Ldata4) == "score")])
+
+# Fit the model using cv.glmnet with the training data
+cv_model4 <- cv.glmnet(matrixLdata4[train.l4,], y4[train.l4], family="multinomial", alpha=1, type.measure = "deviance", nfolds = 10)
+best_lambda4 <- cv_model4$lambda.min
+lasso_coef4 <- predict(cv_model4, type = "coefficients", s = best_lambda4)
+
+# Fit final model with selected best lambda
+lasso.mod4 <- glmnet(matrixLdata4[train.l4, ], y4[train.l4], family="multinomial", type.measure="deviance", alpha=1, lambda=best_lambda4)
+
+# Get predictions as probabilities for each class
+lasso.pred4 <- predict(lasso.mod4, s = best_lambda4, newx = matrixLdata4[test.l4,], type = "response")
+
+# Convert probabilities to class labels by finding the class with the highest probability
+pred_class4 <- apply(lasso.pred4, 1, which.max)
+
+# Map the response variable and the predictions to handle potential unmapped values properly
+# Ensure all classes are covered in training and testing
+all_classes4 <- unique(c(y4[train.l4], y4[test.l4]))
+class_mapping4 <- setNames(seq_along(all_classes4), all_classes4)
+y4_mapped <- as.integer(factor(y4, levels = names(class_mapping4), labels = class_mapping4))
+
+# Recalculate the accuracy ensuring all mapped values are used
+accuracy4 <- mean(pred_class4 == y4_mapped[test.l4], na.rm = TRUE)
+
+# Output the results
+print(paste("Best Lambda:", best_lambda4))
+print(paste("Accuracy:", accuracy4))
+
+##############
+
+# Assuming that the glmnet package and the necessary data from previous parts are already loaded
+
+out4 <- glmnet(matrixLdata4, y4, alpha=1, family="multinomial", type.measure="deviance", lambda=grid4)
+
+print(out4)
+
+########################
+
+# Inspect the structure of the lasso_coef4 to understand how to access the coefficients
+print(class(lasso_coef4))
+print(str(lasso_coef4))
+
+# If lasso_coef4 is a list containing a dgCMatrix, let's properly access it
+# Assuming the coefficients are stored in a dgCMatrix within the first element of the list
+if (is.list(lasso_coef4) && "dgCMatrix" %in% class(lasso_coef4[[1]])) {
+  # Extract the dgCMatrix
+  coef_matrix4 <- lasso_coef4[[1]]
+  # Convert to a vector
+  coef_vector4 <- as.vector(coef_matrix4@x)
+  # Extract names
+  variable_names4 <- rownames(coef_matrix4)
+  # Create a data frame
+  coef_df4 <- data.frame(variable = variable_names4, coefficient = coef_vector4, row.names = NULL)
+  # Filter out zero coefficients
+  coef_df4 <- coef_df4[coef_df4$coefficient != 0, ]
+  # Print the data frame
+  print(coef_df4)
+  # Extract and print the top 10 significant coefficients
+  top10_4 <- head(coef_df4[order(-abs(coef_df4$coefficient)), ], 10)
+  print(top10_4)
+} else {
+  print("The structure of the coefficients is not as expected.")
+}
+
+```
+##GAM Preprocessing
+
+Since Lasso Coefficients were all similar,calculated coefficients from each Ldata subsets and using coefficients with the strongest correlations with score to create further models was an applicable approach.
+
+The top variables for each of the subsets were as follows:
+
+ Variables for Ldata1                      Compared_with                Correlation
+                                           city_Nashville                0.13105408
+                                           CEO_sch_cat_190               0.11565906
+                                           ZIP.Code_837025511            0.11195253
+                                           state_ID                      0.11156854
+                                           business_id_1841234747        0.11099838
+                                           Business_ID_other_1841234747  0.11099838
+                                           city_Boise                    0.10756990
+                                           postal_code_19103             0.09172453
+                                           CEO_grd_yr_2008               0.09015710
+                                           CEO_grd_yr_2017               0.08077060
+                                           
+                                           
+Variables for Ldata2                       Compared_with                Correlation
+                                           field_cat_11                  0.18342268
+                                           CEO_sch_cat_67                0.13492569
+                                           CEO_sch_cat_64                0.13122659
+                                           city_Santa Barbara            0.11772884
+                                           CEO_sch_cat_110               0.10678735
+                                           state_CA                      0.10322308
+                                           state_MO                      0.09753616
+                                           CEO_grd_yr_2010               0.09731007
+                                           CEO_sch_cat_111               0.09068836
+                                           ZIP.Code_372031448            0.08262847
+
+
+Variables for Ldata3                       Compared_with                Correlation
+                                           Rural_metropolitan_Desc_     0.13619652
+                                           Business_ID_other_NA         0.13208032
+                                           CEO_sch_cat_108              0.13168990
+                                           city_Tampa                   0.09340385
+                                           CEO_sch_cat_202              0.09154752
+                                           state_NV                     0.08973789
+                                           city_Reno                    0.08969620
+                                           postal_code_93108            0.08588514
+                                           postal_code_93101            0.08256324
+                                           business_id_1427619014       0.08007572
+
+
+Variables for Ldata4                      Compared_with                Correlation
+                                          city_Santa Barbara            0.10403882
+                                          state_CA                      0.10033139
+                                          city_Tampa                    0.10026333
+                                          postal_code_89521             0.08429599
+                                          ZIP.Code_895021576            0.08086530
+                                          ZIP.Code_337092114            0.07937916
+                                          postal_code_93105             0.07777395
+                                          ZIP.Code_336142665            0.07451029
+                                          ZIP.Code_931101110            0.07422101
+                                          CEO_grd_yr_2005               0.07134418
+
+``` {r GAM Preprocessing, echo=TRUE}
+correlationsL1 <- cor(Ldata1, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_L1 <- as.data.frame(as.table(correlationsL1))
+
+cor_L1 <- cor_L1 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_L1 <- cor_L1 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_L1) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_L1)
+
+####
+
+correlationsL2 <- cor(Ldata2, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_L2 <- as.data.frame(as.table(correlationsL2))
+
+cor_L2 <- cor_L2 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_L2 <- cor_L2 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_L2) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_L2)
+
+###
+
+correlationsL3 <- cor(Ldata3, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_L3 <- as.data.frame(as.table(correlationsL3))
+
+cor_L3 <- cor_L3 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_L3 <- cor_L3 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_L3) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_L3)
+
+###
+
+correlationsL4 <- cor(Ldata4, use = "complete.obs")  # Handling NA values by using complete observations
+
+cor_L4 <- as.data.frame(as.table(correlationsL4))
+
+cor_L4 <- cor_L4 %>% 
+  filter(Var1 == "score" & Var2 != "score")
+
+cor_L4 <- cor_L4 %>% 
+  arrange(desc(Freq))
+
+colnames(cor_L4) <- c("Variable", "Compared_with", "Correlation")
+
+print(cor_L4)
+
+
+```
+
+##GAM 1
+
+Formula Components: The model uses a Gaussian family with an identity link function and includes several predictors modeled as smooth terms using factor-by-smooth interactions (bs = "fs"). These include various categorical variables such as city names, ZIP codes, CEO graduation years, and business IDs.
+Intercept: The estimated intercept is 5.509 with a standard error of 1.081, highly significant (p < 0.0001), indicating a strong baseline effect in the model.
+
+Several terms like city_Nashville, CEO_sch_cat_190, postal_code_19103, CEO_grd_yr_2008, and CEO_grd_yr_2017 show statistical significance, implying these features have a notable non-linear effect on the response variable.
+Other terms associated with specific business IDs and ZIP codes do not show significant effects, suggesting they might not be useful predictors in the context of this model.
+
+
+R-squared (Adjusted): 5.1% - This value is relatively low, indicating that the model explains a small portion of the variance in the response variable.
+Deviance Explained: 5.71% - Similarly, this indicates that the model has limited explanatory power with the current set of predictors.
+
+Features of the Plot:
+The residual plot shows the residuals (the differences between observed and predicted values) against the index of observations.
+The residuals are mostly scattered around the horizontal line at 0, which represents no deviation between predicted and actual values.
+There is no clear pattern or trend in the residuals, which is generally a good sign indicating that the model does not suffer from non-random error structures (like heteroscedasticity or autocorrelation).
+However, the spread of residuals appears uniform across observations without any systematic increase or decrease, which is also a positive indication of model fit quality.
+
+
+```{r GAM 1, echo=TRUE }
+
+library(mgcv)
+
+###
+gam_model1 <- gam(score ~ s(factor(Ldata1$city_Nashville), bs="fs") + 
+                   s(factor(Ldata1$CEO_sch_cat_190), bs="fs") + 
+                   s(factor(Ldata1$ZIP.Code_837025511), bs="fs") +
+                   s(factor(Ldata1$business_id_1841234747), bs="fs") + 
+                   s(factor(Ldata1$Business_ID_other_1841234747), bs="fs") +
+                   s(factor(Ldata1$city_Boise), bs="fs") + 
+                   s(factor(Ldata1$postal_code_19103), bs="fs") + 
+                   s(factor(Ldata1$CEO_grd_yr_2008), bs="fs") + 
+                   s(factor(Ldata1$CEO_grd_yr_2017), bs="fs"),
+                 data = Ldata1, family = gaussian(), method = "REML")
+
+
+summary(gam_model1)
+
+#par(mfrow = c(3, 3))  # Adjust as necessary depending on the number of predictors
+#plot(gam_model, select = 1:9)  # Adjust the number to match the number of predictors
+
+plot(gam_model1)
+
+plot(gam_model1$residuals)
+abline(h = 0, col = "red")
+
+
+
+```
+
+
+##GAM 2
+
+The second GAM model focuses on different factors like field categories, states, CEO school categories, graduation years, and ZIP codes.
+
+Intercept: Similar to the first model, the intercept is significant with an estimate of 5.5424 and a standard error of 0.9469, indicating a strong baseline effect.
+
+This model shows an improved level of significance in several smooth terms compared to the first model:
+field_cat_11, CEO_sch_cat_67, CEO_sch_cat_64, CEO_sch_cat_110, CEO_grd_yr_2010, CEO_sch_cat_111, and ZIP.Code_372031448 are significant predictors, indicating they have substantial non-linear effects on the response variable score.
+Terms like state_CA and state_MO show limited or no significance.
+
+R-squared (Adjusted): 8.03%, a slight improvement over the first model, suggesting better explanatory power.
+Deviance Explained: 8.8%, also showing an enhancement from the first model, but still indicative of moderate effectiveness.
+
+The residuals predominantly center around the horizontal zero line, indicating that on average, the model's predictions are unbiased. This is a desirable property in regression modeling.
+
+The residuals appear evenly distributed across the range of indices, without obvious patterns of systematic errors. This suggests that the model generally captures the variability in the data across different segments.
+
+There are some residuals that deviate significantly from zero, especially a few points below the -1 and above +1 marks. While fewer in number, these outliers could indicate instances where the model predictions significantly differ from the actual values.
+
+The plot does not show signs of increasing or decreasing variance of residuals across the range of indices, which is an indication that the variance of residuals is constant (homoscedasticity). This is a good sign, as heteroscedasticity can be a problem in regression models, violating one of the key OLS assumptions.
+
+If the first model had more pronounced patterns or trends in the residuals, such as a funnel shape or clear systematic deviations, then this model shows an improvement in terms of having more randomly dispersed residuals.
+
+
+```{r GAM 2, echo=TRUE }
+
+# Fit the GAM model with specified predictors in Ldata2
+gam_model2 <- gam(score ~ s(factor(Ldata2$field_cat_11), bs="fs") + 
+                    s(factor(Ldata2$CEO_sch_cat_67), bs="fs") + 
+                    s(factor(Ldata2$CEO_sch_cat_64), bs="fs") + 
+                    s(factor(Ldata2$CEO_sch_cat_110), bs="fs") +
+                    s(factor(Ldata2$state_CA), bs="fs") + 
+                    s(factor(Ldata2$state_MO), bs="fs") + 
+                    s(factor(Ldata2$CEO_grd_yr_2010), bs="fs") + 
+                    s(factor(Ldata2$CEO_sch_cat_111), bs="fs") +
+                    s(factor(Ldata2$ZIP.Code_372031448), bs="fs"),
+                  data = Ldata2, family = gaussian(), method = "REML")
+
+# Output summary of the model
+summary(gam_model2)
+
+# Plot the effects of predictors in the model
+#par(mfrow = c(3, 4))  # Setting the plotting area to fit all predictors
+plot(gam_model2)
+
+# Plot the residuals to check for any patterns or outliers
+plot(gam_model2$residuals)
+abline(h = 0, col = "red")  # Adds a horizontal line at zero to aid in visualization
+
+###
+
+
+```
+
+##GAM 3
+
+R-squared (adjusted): 4.95%, which indicates that a relatively small portion of the variance in the dependent variable is explained by the model.
+
+Deviance Explained: 5.7%, reinforcing that the model explains a small fraction of the total variability in the outcome.
+
+City of Tampa, CEO School Category 202, and State NV show statistically significant effects on the score at different significance levels.
+Postal Code 93108 also has a significant effect, though less so than the others.
+
+The model intercept is significant with a t-value of 6.455, indicating a strong baseline effect when all other predictors are at their reference levels.
+
+Residual Plots:
+
+Centering Around Zero: The residuals are centered around the zero line, which indicates no obvious bias in predictions – the model does not systematically overpredict or underpredict across the dataset.
+
+
+Spread and Variance:
+Similar to the previous models, the spread of residuals appears consistent across the plot, suggesting homoscedasticity.
+The range of residuals is within -2 to +1, showing that most residuals are within this bound and close to the mean, though slightly wider in the negative direction compared to the positive.
+
+There are a few outlier residuals, particularly on the lower side, indicating instances where the model predictions significantly deviate from the actual values.
+
+Comparing with Previous Models:
+Homoscedasticity: All three models seem to maintain consistent variance across predictions, with no apparent pattern that suggests increasing or decreasing variance.
+
+Outliers: The presence and range of outliers are similar across the models. Each model has a few extreme residuals, which could indicate specific data points or scenarios where the model's predictions are particularly poor.
+
+Model: While all three models show low percentages for R-squared and Deviance Explained, they are consistent in this aspect. Each model captures only a small fraction of the total variability in the dependent variable, suggesting potential limitations in the variables included or the complexity that the models are able to capture.
+
+```{r GAM 3, echo=TRUE }
+
+gam_model3 <- gam(score ~
+                    s(factor(Ldata3$Business_ID_other_NA), bs="fs") +
+                    s(factor(Ldata3$CEO_sch_cat_108), bs="fs") +
+                    s(factor(Ldata3$city_Tampa), bs="fs") +
+                    s(factor(Ldata3$CEO_sch_cat_202), bs="fs") +
+                    s(factor(Ldata3$state_NV), bs="fs") +
+                    s(factor(Ldata3$city_Reno), bs="fs") +
+                    s(factor(Ldata3$postal_code_93108), bs="fs") +
+                    s(factor(Ldata3$postal_code_93101), bs="fs") +
+                    s(factor(Ldata3$business_id_1427619014), bs="fs"),
+                  data = Ldata3, family = gaussian(), method = "REML")
+
+summary(gam_model3)
+
+plot(gam_model3)
+
+plot(gam_model3$residuals)
+abline(h = 0, col = "red")
+
+###
+
+
+```
+
+## GAM 4 
+
+R-squared (adjusted): 4.16%, suggesting that the model explains a small proportion of the variance in the score, similar to earlier models.
+Deviance Explained: 4.66%, reinforcing the limited explanatory power of the model.
+
+State of CA, City of Tampa, and multiple ZIP codes are significant predictors with varying levels of influence on the score.
+The terms associated with postal and ZIP codes show that geographic factors have some predictive power, although the effects are relatively small.
+
+The intercept is significantly different from zero, suggesting a considerable baseline effect when all predictors are at their reference levels.
+
+Residual Plot:
+
+Centering and Bias:
+The residuals are mostly centered around the zero line, suggesting that the model does not have a systemic bias in either underestimating or overestimating the score.
+
+Spread and Variance:
+The residuals appear to be homoscedastic, with no clear pattern of increasing or decreasing variance across the index of observations.
+The spread of residuals, ranging mostly between -1 and 1, indicates that the model errors are somewhat consistently distributed across predictions.
+
+Outliers:
+Similar to previous models, GAM4 shows a few outlier residuals, particularly noticeable at both ends of the index. These outliers could be specific cases where the model does not fit well.
+
+When compared with GAM1, GAM2, and GAM3:
+
+Consistency in Variance: All four models demonstrate homoscedastic residuals, indicating consistent error variance across the models.
+Range of Residuals: The fourth model continues to exhibit a similar range of residuals as seen in previous models, with most residuals lying within a narrow band around the zero line.
+Model Fit and Complexity: All models exhibit low R-squared and Deviance Explained values, suggesting that the predictors used might not capture all the complexities or influential factors affecting the score.
+Potential for Improvement: There is a recurring theme of low explanatory power, which might suggest the need for either incorporating additional predictors, exploring interaction effects, or possibly reassessing the model structure to better capture the underlying data relationships.
+
+```{r GAM 4, echo=TRUE }
+# Fit the GAM model using specified predictors in Ldata4
+gam_model4 <- gam(score ~ 
+                    s(factor(Ldata4$state_CA), bs="fs") +
+                    s(factor(Ldata4$city_Tampa), bs="fs") +
+                    s(factor(Ldata4$postal_code_89521), bs="fs") +
+                    s(factor(Ldata4$ZIP.Code_895021576), bs="fs") +
+                    s(factor(Ldata4$ZIP.Code_337092114), bs="fs") +
+                    s(factor(Ldata4$postal_code_93105), bs="fs") +
+                    s(factor(Ldata4$ZIP.Code_336142665), bs="fs") +
+                    s(factor(Ldata4$ZIP.Code_931101110), bs="fs") +
+                    s(factor(Ldata4$CEO_grd_yr_2005), bs="fs"),
+                  data = Ldata4, family = gaussian(), method = "REML")
+
+# Output summary of the model
+summary(gam_model4)
+
+# Plot the effects of predictors in the model
+plot(gam_model4)
+
+# Plot the residuals to check for any patterns or outliers
+plot(gam_model4$residuals)
+abline(h = 0, col = "red")  # Adds a horizontal line at zero to aid in visualization
+
+```
+
+## SVM
+
+We decided to opt for Support Vector Machine Classifier as out last type of model. For that we first needed to convert our multi nomial target variable to a binary target variable. If score was greater than or equal 4, then score_binary variable would record 1, else 0.
+
+### SVM 1
+
+
+Tuning Results for svm_tuned:
+
+Sampling Method: The results are based on a 10-fold cross-validation, meaning the data was divided into 10 subsets. Each subset was used as a test set while the model was trained on the remaining 9 subsets. This process was repeated for each subset and provides a reliable estimate of model performance.
+Best Parameters:
+C = 0.03125: This is the best regularization parameter. The C parameter trades off correct classification of training examples against maximization of the decision function’s margin. For larger values of C, a smaller margin will be accepted if the decision function classifies all training points correctly. A lower C encourages a larger margin and a simpler decision boundary at the cost of training accuracy.
+Gamma = 0.0625: This is the parameter for the radial basis function kernel, and it defines how far the influence of a single training example reaches, with low values meaning ‘far’ and high values meaning ‘close’. The selected gamma suggests a moderate reach for each training example.
+Best Performance: The best performance (cross-validation error rate) is 0.4200176. This indicates the proportion of misclassifications made by the model with the best parameters during the cross-validation process. A lower value would be better, suggesting a performance improvement area.
+
+Best Model (best_model)
+Call: Displays the function call with the best parameters found. This model uses a radial basis function kernel and has been tuned for classification (C-classification).
+Number of Support Vectors: 569. This is the number of support vectors the model uses to define the decision boundary. Support vectors are the data points that lie closest to the decision surface (or hyperplane). A large number of support vectors can indicate that the decision boundary is heavily tailored to the training data, which can sometimes lead to overfitting.
+
+Final SVM Model (final_svm_model)
+Parameters:
+Cost: 0.03125, confirmed to be the same as the best found in tuning.
+SVM Type and Kernel: Remains consistent as C-classification with a radial kernel.
+Number of Support Vectors: 638, slightly higher than in the tuned model. This change can occur due to the re-training on the entire dataset using the best-found parameters rather than only on subsets used during cross-validation.
+
+```{ r SVM 1, echo=TRUE}
+library(e1071)
+
+Ldata1$score_binary <- ifelse(Ldata1$score >= 4 & Ldata1$score <= 5, 1, 0)
+Ldata1$score_binary <- as.factor(Ldata1$score_binary)
+
+# Define ranges for C and gamma
+svm_tune_grid <- expand.grid(C = 2^(-5:2), gamma = 2^(-5:2))
+
+# Tune SVM model
+svm_tuned <- tune(svm, train.x = score_binary ~ city_Nashville + 
+                    CEO_sch_cat_190 + ZIP.Code_837025511 
+                  + business_id_1841234747 + Business_ID_other_1841234747
+                  + city_Boise +postal_code_19103 + postal_code_19103
+                  +CEO_grd_yr_2008, data = Ldata1,
+                  kernel = "radial", 
+                  ranges = svm_tune_grid,
+                  cross = 10)  # Using 10-fold cross-validation
+
+# Print best model
+print(svm_tuned)
+
+# Summary of the tuning
+summary(svm_tuned)
+
+# Best parameters
+best_model <- svm_tuned$best.model
+best_parameters <- svm_tuned$best.parameters
+
+print(best_model)
+print(best_parameters)
+
+# Re-fit SVM with best parameters
+final_svm_model <- svm(score_binary ~ city_Nashville + 
+                         CEO_sch_cat_190 + ZIP.Code_837025511 
+                       + business_id_1841234747 + Business_ID_other_1841234747
+                       + city_Boise +postal_code_19103 + postal_code_19103
+                       +CEO_grd_yr_2008, data = Ldata1, 
+                       type = "C-classification", kernel = "radial",
+                       cost = best_parameters$C, gamma = best_parameters$gamma)
+
+print(final_svm_model)
+```
+
+### SVM 2
+
+Best Parameters:
+First SVM: C= 0.03125, Gamma= 0.0625
+Second SVM: C= 0.03125, Gamma= 0.5
+
+The gamma parameter is higher in the second SVM, suggesting the influence of a single training example reaches less far, which implies a more complex, less smooth decision boundary.
+
+Best Performance:
+First SVM: 0.4200176
+Second SVM: 0.4507682
+The performance metric, likely representing an error rate or a loss, has worsened slightly in the second SVM, indicating a decrease in the model's predictive accuracy.
+
+First SVM: 638 support vectors in the final model.
+Second SVM: 775 support vectors in the final model.
+The increased number of support vectors in the second SVM suggests a more complex model that is closely fitted to the training data, potentially at the risk of overfitting.
+
+Both SVMs use a radial basis function kernel and C-classification type, but differ in the specifics of their formulae, reflecting different features used for training. This change in features might account for differences in model complexity and performance.
+
+Implications and Insights
+Generalization vs. Complexity: The increase in gamma and the number of support vectors in the second SVM indicates a model that may generalize less effectively due to its complexity. This is reflected in the slightly worse performance metric.
+Feature Influence: The changes in features between the two models could significantly impact their performance. The selection of different features suggests exploring feature importance and impact on the model could be beneficial.
+Tuning Strategy: The consistent use of C=0.03125 across both models but changes in gamma suggests that while regularization strength remains constant, adjusting the kernel's scale parameter significantly influences model behavior.
+
+```{ r SVM 2, echo=TRUE}
+Ldata2$score_binary <- ifelse(Ldata2$score >= 4 & Ldata2$score <= 5, 1, 0)
+Ldata2$score_binary <- as.factor(Ldata2$score_binary)
+
+# Define ranges for C and gamma
+svm_tune_grid <- expand.grid(C = 2^(-5:2), gamma = 2^(-5:2))
+
+# Tune SVM model
+svm_tuned2 <- tune(svm, train.x = score_binary ~ field_cat_11 + 
+                     CEO_sch_cat_67 + CEO_sch_cat_64 
+                  +CEO_sch_cat_110 + state_CA + state_MO + CEO_grd_yr_2010+
+                    CEO_sch_cat_111 + ZIP.Code_372031448, data = Ldata1,
+                  kernel = "radial", 
+                  ranges = svm_tune_grid,
+                  cross = 10)  # Using 10-fold cross-validation
+
+# Print best model
+print(svm_tuned2)
+
+# Summary of the tuning
+summary(svm_tuned2)
+
+# Best parameters
+best_model2 <- svm_tuned2$best.model
+best_parameters2 <- svm_tuned2$best.parameters
+
+print(best_model2)
+print(best_parameters2)
+
+# Re-fit SVM with best parameters
+final_svm_model2 <- svm(score_binary ~ field_cat_11 + 
+                          CEO_sch_cat_67 + CEO_sch_cat_64 
+                        +CEO_sch_cat_110 + state_CA + state_MO + CEO_grd_yr_2010+
+                          CEO_sch_cat_111 + ZIP.Code_372031448, data = Ldata2, 
+                        type = "C-classification", kernel = "radial",
+                        cost = best_parameters2$C, gamma = best_parameters2$gamma)
+
+print(final_svm_model2)
+```
+
+### SVM 3
+
+Best Parameters
+C = 0.03125
+Gamma = 0.03125
+
+The parameters are tuned to balance the model complexity and reach similar to the first model, but with a slightly different gamma suggesting a minor adjustment in the influence of individual training examples.
+
+Best Performance
+Third SVM: 0.429839
+This performance is closer to the first model than the second, suggesting a slight improvement over the second model but not quite reaching the first model's effectiveness.
+
+Model Complexity (Number of Support Vectors)
+Third SVM: 705 support vectors in the final model.
+The number of support vectors is higher than the first model and closer to the second. This indicates a model complexity that is in between the first and second models, potentially leading to better generalization than the second model but possibly more overfitting than the first.
+
+Model Fit and Training
+Similar to the other models, it uses a radial basis function kernel and C-classification type. The formula for the model includes different feature combinations, which affects how the model interacts with the dataset.
+
+Comparative Insights:
+Model Comparison: The third SVM model fits in a complexity space between the first and second models. Its performance suggests it has not managed to fully capitalize on its complexity for better accuracy.
+Feature Effect: The choice of features in the third model, such as the inclusion of specific business and postal codes, seems to impact its ability to generalize, as indicated by the moderate number of support vectors and intermediate performance.
+Parameter Settings: The consistent use of low C values across models highlights a strategy focusing on strong regularization, which is critical in avoiding overfitting, especially when models become complex with higher gamma values.
+
+```{ r SVM 3, echo=TRUE}
+Ldata3$score_binary <- ifelse(Ldata3$score >= 4 & Ldata3$score <= 5, 1, 0)
+Ldata3$score_binary <- as.factor(Ldata3$score_binary)
+
+# Define ranges for C and gamma
+svm_tune_grid <- expand.grid(C = 2^(-5:2), gamma = 2^(-5:2))
+
+# Tune SVM model
+svm_tuned3 <- tune(svm, train.x = score_binary ~ Business_ID_other_NA + CEO_sch_cat_108
+                   + city_Tampa +CEO_sch_cat_202 + state_NV+
+                     city_Reno +postal_code_93108 + postal_code_93101 +
+                     business_id_1427619014, data = Ldata3,
+                   kernel = "radial", 
+                   ranges = svm_tune_grid,
+                   cross = 10)  # Using 10-fold cross-validation
+
+# Print best model
+print(svm_tuned3)
+
+# Summary of the tuning
+summary(svm_tuned3)
+
+# Best parameters
+best_model3 <- svm_tuned3$best.model
+best_parameters3 <- svm_tuned3$best.parameters
+
+print(best_model3)
+print(best_parameters3)
+
+# Re-fit SVM with best parameters
+final_svm_model3 <- svm(score_binary ~ Business_ID_other_NA + CEO_sch_cat_108
+                        + city_Tampa +CEO_sch_cat_202 + state_NV+
+                          city_Reno +postal_code_93108 + postal_code_93101 +
+                          business_id_1427619014 , data = Ldata3, 
+                        type = "C-classification", kernel = "radial",
+                        cost = best_parameters3$C, gamma = best_parameters3$gamma)
+
+print(final_svm_model3)
+```
+
+### SVM 4
+
+Best Parameters
+C= 0.03125
+Gamma= 0.03125
+The parameter settings remain consistent with the third model, emphasizing regularization and the influence of individual examples (similar gamma).
+
+Best Performance:
+Fourth SVM: 0.3896242
+This model achieves the best performance out of all the SVMs tuned so far, indicating a slight increase in predictive accuracy.
+
+Model Complexity (Number of Support Vectors)
+Fourth SVM: 1108 support vectors in the final model.
+The number of support vectors has increased significantly compared to the third model and is the highest among all models. This increase suggests that the fourth model might be capturing more complexity or possibly overfitting.
+
+Utilizes a radial basis function kernel and C-classification type, consistent across all models. The formula used includes different geographic and business-related features, affecting its adaptability to the dataset specifics.
+
+Comparative Insights:
+Improvement in Performance: Despite similar parameter settings as the third model, the fourth model shows a better performance. This suggests that the selection of features and possibly the larger dataset size in Ldata4 contribute positively.
+Complexity and Overfitting: The substantial increase in the number of support vectors could be a red flag for overfitting, especially given that it's not matched by a significant jump in performance metrics.
+Stability in Parameter Choice: The consistent low C values suggest a continued strategy focusing on strong regularization, which, although intended to prevent overfitting, must be monitored given the high number of support vectors.
+
+```{ r SVM 4, echo=TRUE}
+
+Ldata4$score_binary <- ifelse(Ldata4$score >= 4 & Ldata4$score <= 5, 1, 0)
+Ldata4$score_binary <- as.factor(Ldata4$score_binary)
+
+# Define ranges for C and gamma
+svm_tune_grid <- expand.grid(C = 2^(-5:2), gamma = 2^(-5:2))
+
+# Tune SVM model
+svm_tuned4 <- tune(svm, train.x = score_binary ~ state_CA + city_Tampa + postal_code_89521
+                   + ZIP.Code_895021576 + ZIP.Code_337092114 + 
+                     postal_code_93105 + ZIP.Code_336142665 +
+                     ZIP.Code_931101110 +CEO_grd_yr_2005, data = Ldata4,
+                   kernel = "radial", 
+                   ranges = svm_tune_grid,
+                   cross = 10)  # Using 10-fold cross-validation
+
+# Print best model
+print(svm_tuned4)
+
+# Summary of the tuning
+summary(svm_tuned4)
+
+# Best parameters
+best_model4 <- svm_tuned4$best.model
+best_parameters4 <- svm_tuned4$best.parameters
+
+print(best_model4)
+print(best_parameters4)
+
+# Re-fit SVM with best parameters
+final_svm_model4 <- svm(score_binary ~ state_CA + city_Tampa + postal_code_89521
+                        + ZIP.Code_895021576 + ZIP.Code_337092114 + 
+                          postal_code_93105 + ZIP.Code_336142665 +
+                          ZIP.Code_931101110 +CEO_grd_yr_2005, data = Ldata4, 
+                        type = "C-classification", kernel = "radial",
+                        cost = best_parameters4$C, gamma = best_parameters4$gamma)
+
+print(best_parameters4)
+
+print(final_svm_model4)
+
+```
+
+## Conclusion
+
+Throughout this Assignment, we explored various statistical modeling techniques—Lasso regression, Generalized Additive Models (GAM), and Support Vector Machines (SVM)—each serving to analyze and predict based on your dataset's complexities. Starting with Lasso regression, we noticed a trend of models grappling with significant regularization to manage predictors, evidenced by best lambda values and low model deviance across multiple iterations. The GAM analysis further detailed how non-linear relationships were addressed in the dataset, focusing on interactions through smooth terms with mixed significance and explained deviances that remained consistently low, suggesting moderate fitting challenges.
+
+Moving to SVM, the focus shifted towards classification performance with radial kernels. These models demonstrated a progressive tuning of the cost and gamma parameters, aimed at refining the trade-off between error penalty and the influence of individual data points. The best performances in SVM were incrementally improved, although they still hinted at potential overfitting, as seen by the increased number of support vectors in later models.
+
+Overall, each model type highlighted unique facets of the data: Lasso with its parsimony in predictors, GAM with flexibility in capturing data structure, and SVM with its robust classification capabilities. However, the generally modest performance metrics across all models suggest that there might be underlying complexities in the data that are not fully captured by these approaches. This underscores the necessity for further refinement of feature selection, possibly incorporating more domain-specific knowledge or exploring more sophisticated ensemble techniques to enhance predictive accuracy and model robustness.
+

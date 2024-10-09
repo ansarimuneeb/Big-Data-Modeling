@@ -1,0 +1,2027 @@
+---
+title: "Advaned Analytics and Machine Learning Assignment 1"
+output: html_document
+date: "15th-March-2024"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The essence of this assignment was to deal with an exceptionally large dataset. As for the workflow, we were required to do the following things.
+1.	Follow the instructions and generate a large dataset which should not be lower than 30 MBs in size. 
+2.	Perform an exploratory analysis of the dataset accompanied by a zero analysis.
+3.	Make relevant visualization to observe any patterns.
+4.	Divide the dataset into four on the basis of the variable called product.field_description and perform the following tasks for each of the subset: Lasso Regression, Logistic Regression, Linear Discriminant Analysis (LDA).
+5.	Compare the results of each Logistic Regression and LDA.
+
+
+## Dataset Generation
+
+As per the instructions, the generated dataset should have been around 300 – 400 MBs. However, if a lower size was generated, that was accepted if the size is not lower than 30 MB. My dataset generated was 154 MBs with 552,422 observations. I did not need to change any other line of code except to add my student number.
+
+## Codes
+
+Following are all the pre processing up to this point.
+
+```{r Preprocessing, echo=TRUE}
+
+#load libraries
+library(dplyr)
+library(ggplot2)
+library(glmnet)
+library(pROC)
+library(caret)
+library(MASS)
+
+#set seed
+set.seed(1)
+
+#load dataset
+df <- read.csv("C:/Users/User/Desktop/QUB Classes/Semester 2/Advanced Analytics/assignment 1/datasets/output_40426685.csv")
+
+#summarize dataset
+dim(df)
+head(df)
+summary(df)
+
+
+print("ID_non_uniq" %in% names(df))
+
+#converting to factor
+df1 <- df %>%
+  mutate(
+    ID_non_uniq = factor(ID_non_uniq),
+    Product.issue.consequence = factor(Product.issue.consequence),
+    manufacturer_contact_address_1 = factor(manufacturer_contact_address_1),
+    product.brand_name = factor(product.brand_name),
+    product.generic_name = factor(product.generic_name),
+    product.issue.type = factor(product.issue.type),
+    type_of_report.1 = factor(type_of_report.1),
+    reporter_job_code = factor(reporter_job_code),
+    source_type = factor(source_type),
+    product.manufacturer_name = factor(product.manufacturer_name),
+    product.product_operator = factor(product.product_operator),
+    product.manufacturer_city = factor(product.manufacturer_city),
+    product.manufacturer_state = factor(product.manufacturer_state),
+    product.manufacturer_country = factor(product.manufacturer_country),
+    product.field_description = factor(product.field_description),
+    product.product_report_product_code = factor(product.product_report_product_code)
+  )
+
+#check null values in data
+sum(!complete.cases(df1))
+
+#Checking for Unknown values
+sum(df1 == "Unknown", na.rm = TRUE)
+
+
+sum(is.na(df))
+
+```
+
+The data did not have any missing values but almost all the observations had 0s in them. Variables were converted to categorical.
+
+##Exploring each product field 
+
+The results here suggest that ID_non_uniq for highest deaths are p080012, p860004, p890055.
+
+``` { r Product Fields echo=TRUE}
+df1 %>%
+  filter(product.field_description == "Unknown") %>%
+  nrow()
+df1 %>%
+  filter(product.field_description == "Unknown") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count = n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+df1 %>%
+  filter(product.field_description == "General, Plastic Surgery") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count= n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+
+df1 %>%
+  filter(product.field_description == "Immunology") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count = n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+  
+#exploring product.field_description
+summary(df1$product.field_description)
+#! All the Unknowns are in product.field_description
+
+```
+
+## Counts of Death and Non deaths by source type
+
+Source_type 3, 12, 4, 6, 11 should be investigated as highest deaths. Majority consequences for Unknown are deaths.
+```{r souce type deaths, echo=TRUE}
+#! We can assume this graph to be for product.field_description == Unknown as only it has deaths
+death_data <- df1 %>%
+  filter(Product.issue.consequence == "Death") %>%
+  group_by(source_type) %>%
+  summarise(count = n())
+ggplot(death_data, aes(x = reorder(source_type, -count), y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Source Type", y = "Count of Deaths", title = "Count of Deaths by Source Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+non_death_data <- df1 %>%
+  filter(Product.issue.consequence == "Death") %>%
+  group_by(source_type) %>%
+  summarise(count = n())
+ggplot(non_death_data, aes(x = reorder(source_type, -count), y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Source Type", y = "Count of Non Deaths", title = "Count of Non Deaths by Source Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+count_by_source <- df1 %>%
+  count(source_type) %>%
+  arrange(desc(n))
+ggplot(count_by_source, aes(x = reorder(source_type, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Source Type", y = "Count", title = "Count of Occurrences by Source Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## Observing changes of variables over four years
+
+Summaries for columns related to years when grouped by ID can tell how the pattern of change for each specific ID. This can be very useful to
+predict the behaviors by IDs for each next subsequent year. We see a sharp drop in legal announcements, product quantities and change in products.
+
+
+```{r Changes over years, echo=TRUE}
+
+#defining columns for years
+
+last_year_cols <- c(
+  "last_year_all_product_codes_num_uniq", "last_year_all_product_codes_most_freq", 
+  "last_year_brand_name_num_uniq", "last_year_brand_name_most_freq", 
+  "last_year_classification0_num_uniq", "last_year_classification1_num_uniq",
+  "last_year_classification2_num_uniq", "last_year_company_name_num_uniq", 
+  "last_year_company_name_most_freq", "last_year_reason_for_legal_announcement_num_uniq", 
+  "last_year_reason_for_legal_announcement_most_freq", "last_year_legal_announcementing_firm_num_uniq", 
+  "last_year_legal_announcementing_firm_most_freq", "last_year_root_cause_description_num_uniq", 
+  "last_year_root_cause_description_most_freq", "last_year_product_quantity_average_num_uniq", 
+  "last_year_product_quantity_average_max", "last_year_product_quantity_average_average", 
+  "last_year_decision_date_max_changes_in_product", "last_year_decision_date_average_changes_in_product"
+)
+last_two_years_cols <- c(
+  "last_two_years_all_product_codes_num_uniq", "last_two_years_all_product_codes_most_freq",
+  "last_two_years_brand_name_num_uniq", "last_two_years_brand_name_most_freq",
+  "last_two_years_classification0_num_uniq", "last_two_years_classification1_num_uniq",
+  "last_two_years_classification2_num_uniq", "last_two_years_company_name_num_uniq",
+  "last_two_years_company_name_most_freq", "last_two_years_reason_for_legal_announcement_num_uniq",
+  "last_two_years_reason_for_legal_announcement_most_freq", "last_two_years_legal_announcementing_firm_num_uniq",
+  "last_two_years_legal_announcementing_firm_most_freq", "last_two_years_root_cause_description_num_uniq",
+  "last_two_years_root_cause_description_most_freq", "last_two_years_product_quantity_average_num_uniq",
+  "last_two_years_product_quantity_average_max", "last_two_years_product_quantity_average_average",
+  "last_two_years_decision_date_max_changes_in_product", "last_two_years_decision_date_average_changes_in_product"
+)
+last_four_years_cols <- c(
+  "last_four_years_all_product_codes_num_uniq", "last_four_years_all_product_codes_most_freq",
+  "last_four_years_brand_name_num_uniq", "last_four_years_brand_name_most_freq",
+  "last_four_years_classification0_num_uniq", "last_four_years_classification1_num_uniq",
+  "last_four_years_classification2_num_uniq", "last_four_years_company_name_num_uniq",
+  "last_four_years_company_name_most_freq", "last_four_years_reason_for_legal_announcement_num_uniq",
+  "last_four_years_reason_for_legal_announcement_most_freq", "last_four_years_legal_announcementing_firm_num_uniq",
+  "last_four_years_legal_announcementing_firm_most_freq", "last_four_years_root_cause_description_num_uniq",
+  "last_four_years_root_cause_description_most_freq", "last_four_years_product_quantity_average_num_uniq",
+  "last_four_years_product_quantity_average_max", "last_four_years_product_quantity_average_average",
+  "last_four_years_decision_date_max_changes_in_product", "last_four_years_decision_date_average_changes_in_product"
+)
+other_cols <- c(
+  "ID_non_uniq", "date_event", "manufacturer_contact_address_1", 
+  "product.brand_name", "product.generic_name", "product.issue.type",
+  "type_of_report.1", "reporter_job_code", "source_type", 
+  "product.manufacturer_name", "product.product_operator", 
+  "product.manufacturer_city", "product.manufacturer_state", 
+  "product.manufacturer_country", "product.field_description", 
+  "product.product_report_product_code"
+)
+# groups of columns for last year, last two years, and last four years
+last_year_vars <- c(
+  "last_year_decision_date_average_changes_in_product",
+  "last_year_product_quantity_average_average",
+  "last_year_root_cause_description_most_freq",
+  "last_year_legal_announcementing_firm_most_freq",
+  "last_year_all_product_codes_most_freq",
+  "last_year_brand_name_most_freq"
+)
+
+last_two_years_vars <- c(
+  "last_two_years_decision_date_average_changes_in_product",
+  "last_two_years_product_quantity_average_average",
+  "last_two_years_root_cause_description_most_freq",
+  "last_two_years_legal_announcementing_firm_most_freq",
+  "last_two_years_all_product_codes_most_freq",
+  "last_two_years_brand_name_most_freq"
+)
+
+last_four_years_vars <- c(
+  "last_four_years_decision_date_average_changes_in_product",
+  "last_four_years_product_quantity_average_average",
+  "last_four_years_root_cause_description_most_freq",
+  "last_four_years_legal_announcementing_firm_most_freq",
+  "last_four_years_all_product_codes_most_freq",
+  "last_four_years_brand_name_most_freq"
+)
+
+calculate_averages <- function(df, vars) {
+  sapply(vars, function(var) mean(df[[var]], na.rm = TRUE))
+}
+
+df_specific_id <- df %>% 
+  filter(ID_non_uniq == "p860004")
+
+average_last_year <- calculate_averages(df_specific_id, last_year_vars)
+average_last_two_years <- calculate_averages(df_specific_id, last_two_years_vars)
+average_last_four_years <- calculate_averages(df_specific_id, last_four_years_vars)
+
+combined_averages <- rbind(average_last_year, average_last_two_years, average_last_four_years)
+
+row_labels <- c("Decision Date Average Change in Product",
+                "Product Quantity Average",
+                "Root Cause Description",
+                "Legal Announcement",
+                "All Product Codes",
+                "Brand Name")
+
+colnames(combined_averages) <- last_year_vars
+
+results_df <- as.data.frame(t(combined_averages))
+names(results_df) <- c("Last Year", "Last Two Years", "Last Four Years")
+results_df$Row <- row_labels
+
+results_df <- results_df[, c("Row", "Last Year", "Last Two Years", "Last Four Years")]
+
+print(results_df)
+
+df1 %>%
+  group_by(ID_non_uniq) %>%
+  summarize(across(all_of(last_year_cols), mean, na.rm = TRUE))
+
+# Summaries for last_two_years_cols
+df1 %>%
+  group_by(ID_non_uniq) %>%
+  summarize(across(all_of(last_two_years_cols), mean, na.rm = TRUE))
+
+# Summaries for last_four_years_cols
+df1 %>%
+  group_by(ID_non_uniq) %>%
+  summarize(across(all_of(last_four_years_cols), mean, na.rm = TRUE))
+
+# ! gives us an understanding of how variables have altered over the years
+```
+
+## Creating Subsets for each product field
+
+We see that we don't have enough observations for each product field except for "Unknown". Since Product.issue.consequence is the target variable with special focus on product.field_description. We can see that for every field but “Unknown” there is only malfunction. Focusing on the “Unknown” field, we can see that the ID p860004 is the only account dominantly responsible for all outputs like death, injury and malfunction primarily because of having the highest count as well.
+
+``` {r subsets of product field, echo=TRUE}
+
+#creating subsets for each product field
+df1 %>%
+  filter(product.field_description == "Unknown") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count = n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+
+df1 %>%
+  filter(product.field_description == "General, Plastic Surgery") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count= n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+
+df1 %>%
+  filter(product.field_description == "Immunology") %>%
+  group_by(ID_non_uniq) %>%
+  summarise(
+    count = n(),
+    count_death = sum(Product.issue.consequence == "Death", na.rm = TRUE),
+    count_injury = sum(Product.issue.consequence == "Injury", na.rm = TRUE),
+    count_malfunction = sum(Product.issue.consequence == "Malfunction", na.rm = TRUE)
+  )
+
+```
+
+
+## Dummy Coding and Normalization
+
+For all the categorical variables except for date and product issue consequences, dummy coding was done so that they could be input
+in forward selection, regression and lda. Product issue consequence of death was encoded to a new variable called death_or_not as 
+the final output variable. 
+
+```{r Dummy and Normalization, echo=TRUE}
+
+#normalization
+normalize <- function(x) {
+  return((x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))
+}
+
+columns_to_normalize <- c("last_year_decision_date_average_changes_in_product",
+                                              "last_year_product_quantity_average_average",
+                                              "last_year_root_cause_description_most_freq",
+                                              "last_year_legal_announcementing_firm_most_freq",
+                                              "last_year_all_product_codes_most_freq",
+                                              "last_year_brand_name_most_freq",
+                                              "last_year_classification0_num_uniq",
+                                              "last_year_company_name_most_freq",
+                                              "last_year_product_quantity_average_max",
+                                              "last_year_decision_date_max_changes_in_product",
+                                              "last_two_years_decision_date_average_changes_in_product",
+                                              "last_two_years_product_quantity_average_average",
+                                              "last_two_years_root_cause_description_most_freq",
+                                              "last_two_years_legal_announcementing_firm_most_freq",
+                                              "last_two_years_all_product_codes_most_freq",
+                                              "last_two_years_brand_name_most_freq",
+                                              "last_two_years_classification0_num_uniq",
+                                              "last_two_years_company_name_most_freq",
+                                              "last_two_years_product_quantity_average_max",
+                                              "last_two_years_decision_date_max_changes_in_product",
+                                              "last_four_years_decision_date_average_changes_in_product",
+                                              "last_four_years_product_quantity_average_average",
+                                              "last_four_years_root_cause_description_most_freq",
+                                              "last_four_years_legal_announcementing_firm_most_freq",
+                                              "last_four_years_all_product_codes_most_freq",
+                                              "last_four_years_brand_name_most_freq",
+                                              "last_four_years_classification0_num_uniq",
+                                              "last_four_years_company_name_most_freq")
+
+df1_normalized <- df1
+df1_normalized[columns_to_normalize] <- lapply(df1[columns_to_normalize], normalize)
+
+#dummy / one hot coding
+df2 <- fastDummies::dummy_cols(df1_normalized, select_columns = c("ID_non_uniq",
+                                                       "manufacturer_contact_address_1",
+                                                       "product.brand_name",
+                                                       "product.generic_name",
+                                                       "product.issue.type",
+                                                       "type_of_report.1",
+                                                       "reporter_job_code",
+                                                       "source_type",
+                                                       "product.manufacturer_name",
+                                                       "product.product_operator",
+                                                       "product.manufacturer_city",
+                                                       "product.manufacturer_state",
+                                                       "product.manufacturer_country",
+                                                       "product.field_description",
+                                                       "product.product_report_product_code"),remove_selected_columns = TRUE)
+
+
+df2 <- df2 %>%
+  mutate(death_or_not = ifelse(Product.issue.consequence == "Death", 1, 0))
+
+df2 <- subset(df2, select = -Product.issue.consequence)
+
+df2 <- subset(df2, select = -date_event)
+
+#subseting prepared dataset for further use
+df2_general <- df2 %>%
+  filter(`product.field_description_General, Plastic Surgery` == "1")
+
+df2_immunology <- df2 %>%
+  filter(product.field_description_Immunology == "1")
+
+df2_unknown <- df2 %>%
+  filter(product.field_description_Unknown == "1")
+df2_unknown_subset <- sample_n(df2_unknown, size = 5000)
+
+
+```
+
+
+### Alternative subsetting for further Analysis
+
+We will select product.product_report_product_code_LKK, product.issue.type_599, manufacturer_contact_address_1_9476 as they have a strong majority in the variables that they belong in. Analysis in the case of this dataset cannot be done on the different product fields because their negligable counts are not enough for any sort of analysis.
+
+```{r further subsetting, echo=TRUE}
+summary(df1)
+
+# ! product.product_report_product_code_LKK
+# ! product.issue.type_599
+# ! manufacturer_contact_address_1_9476
+
+df2_report <- df2 %>%
+  filter( product.product_report_product_code_LKK == "1")
+df2_report_reduced <- sample_n(df2_report, size = 60000)
+
+df2_issue <- df2 %>%
+  filter( product.issue.type_599 == "1")
+df2_issue_reduced <- sample_n(df2_issue, size = 60000)
+
+df2_address <- df2 %>%
+  filter( manufacturer_contact_address_1_9476 == "1")
+df2_address_reduced <- sample_n(df2_address, size = 60000)
+
+
+```
+
+## Relations of Product Code LKK 1 or 0 based on averages
+
+For each of the visualizations made the average values of certain variables are different for both levels of Product Code LKK, 1 and 0. 
+This means that Product Code LKK has a correlation to say the least with all of the following variables: Product Code Frequency for last year, Last year classification number. 
+
+
+```{r Product Code LKK, echo=TRUE}
+#last_year_all_product_codes_most_freq
+avg_data_codes <- df2 %>%
+  group_by(product.product_report_product_code_LKK) %>%
+  summarise(Average_product_code = mean(last_year_all_product_codes_most_freq, na.rm = TRUE))
+
+ggplot(avg_data_codes, aes(x = as.factor(product.product_report_product_code_LKK), y = Average_product_code)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Product Code LKK", y = "Average of Product Code Frequency")
+
+#last_year_classification0_num_uniq
+avg <- df2 %>%
+  group_by(product.product_report_product_code_LKK) %>%
+  summarise(Average = mean(last_year_classification0_num_uniq, na.rm = TRUE))
+
+ggplot(avg, aes(x = as.factor(product.product_report_product_code_LKK), y = Average)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Product Code LKK", y = "Average Last Year Classification Number")
+
+
+```
+
+
+## Possible Relations of Other Variables
+
+Last year product quantity average max is very much biased to low frequencies.
+In totality, majority of the consequences for product issues are Injuries, Death are in the minority.
+The boxplot displays the distribution of "Last Year Decision Date Average Changes," with a median close to zero and a fairly symmetrical spread of data. There are several outliers indicating some values significantly lower than the bulk of the data.
+Product Quantities average max have been consistent throughout the years.
+
+
+```{r Relations, echo=TRUE}
+
+df1_short <- df1 %>% sample_n(60000)
+
+summary(df1_short)
+str(df1_short)
+
+##
+ggplot(df1_short, aes(x = last_year_product_quantity_average_max)) +
+  geom_histogram(binwidth = 50000, fill = "blue", color = "black") +
+  labs(title = "Distribution of Last Year Product Quantity Average Max",
+       x = "Last Year Product Quantity Average Max",
+       y = "Frequency")
+
+
+ggplot(df1_short, aes(x = Product.issue.consequence)) +
+  geom_bar(fill = "coral", color = "black") +
+  labs(title = "Frequency of Product Issue Consequence",
+       x = "Product Issue Consequence",
+       y = "Frequency")
+
+ggplot(df1_short, aes(y = last_year_decision_date_average_changes_in_product)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Boxplot of Last Year Decision Date Average Changes", y = "Average Changes")
+
+
+ggplot(df1_short, aes(x = last_two_years_product_quantity_average_max)) +
+  geom_density(fill = "lightgreen") +
+  labs(title = "Density Plot of Last Two Years Product Quantity Max", x = "Product Quantity Max", y = "Density")
+
+ggplot(df1_short, aes(x = last_year_product_quantity_average_max, y = last_year_product_quantity_average_average)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  labs(title = "Scatter Plot of Max vs. Average Quantity", x = "Max Quantity", y = "Average Quantity")
+
+ggplot(df1_short, aes(x = Product.issue.consequence, y = last_year_company_name_num_uniq, fill = Product.issue.consequence)) +
+  geom_violin() +
+  labs(title = "Violin Plot of Company Name Uniqueness by Issue Consequence", x = "Issue Consequence", y = "Company Name Uniqueness")
+
+ggplot(df1_short, aes(x = product.manufacturer_country, fill = Product.issue.consequence)) +
+  geom_bar(position = "stack") +
+  labs(title = "Stacked Bar Plot of Manufacturer Country by Issue Consequence", x = "Manufacturer Country", y = "Count")
+
+
+
+```
+##Zero Analysis 1
+
+This table tells us that there are at most 9 variables that are contributing to majority of the zero counts in the dataset. Top 3 of these variables are related to classification2 throughout the four years where up to a maximum 81% of there observations are zero values. All top 9 are either classification0, 1 or 2 variables.
+
+
+```{r zero 1, echo=TRUE }
+#Zero Analysis 1
+results <- data.frame(
+  Variable = character(),
+  Number_of_Zero_Rows = integer(),
+  Percentage_of_Zero_Rows = numeric(),
+  stringsAsFactors = FALSE
+)
+count_zero_rows <- function(x) {
+  sum(x == 0, na.rm = TRUE)
+}
+
+for (var in names(df1)) {
+  num_zero_rows <- sum(df1[[var]] == 0, na.rm = TRUE)
+  percent_zero_rows <- (num_zero_rows / nrow(df1)) * 100
+  results <- rbind(results, data.frame(Variable = var, Number_of_Zero_Rows = num_zero_rows, Percentage_of_Zero_Rows = percent_zero_rows))
+}
+
+results_zero <- results[order(-results$Number_of_Zero_Rows),]
+print(results_zero)
+
+```
+
+
+##Zero Analysis 2
+
+The table provides counts of rows with zero occurrences for three categories—death, injury, and malfunction—across four different time spans: the last year, the last 2 years, the last 4 years, and others. In each category, the number of rows with zero occurrences decreases as the time span increases, suggesting there are more instances of non-zero occurrences (events happening) as the time frame expands.
+
+```{r zero 2, echo=TRUE }
+#Zero Analysis 2
+death_subset <- df[df$Product.issue.consequence == "Death", ]
+injury_subset <- df[df$Product.issue.consequence == "Injury", ]
+malfunction_subset <- df[df$Product.issue.consequence == "Malfunction", ]
+
+count_zero_rows_any <- function(df, cols) {
+  sum(apply(df[, cols, drop = FALSE] == 0, 1, any, na.rm = TRUE))
+}
+resultsMatrix <- matrix(nrow = 4, ncol = 4, dimnames = list(
+  c("Total Rows with 0", "Total Rows with 0 for Death", "Total Rows with 0 for Injury", "Total Rows with 0 for Malfunction"),
+  c("Last Year", "Last 2 Years", "Last 4 Years", "Others")
+))
+resultsMatrix[1, ] <- c(
+  count_zero_rows_any(df, last_year_cols),
+  count_zero_rows_any(df, last_two_years_cols),
+  count_zero_rows_any(df, last_four_years_cols),
+  count_zero_rows_any(df, other_cols)
+)
+resultsMatrix[2, ] <- c(
+  count_zero_rows_any(death_subset, last_year_cols),
+  count_zero_rows_any(death_subset, last_two_years_cols),
+  count_zero_rows_any(death_subset, last_four_years_cols),
+  count_zero_rows_any(death_subset, other_cols)
+)
+resultsMatrix[3, ] <- c(
+  count_zero_rows_any(injury_subset, last_year_cols),
+  count_zero_rows_any(injury_subset, last_two_years_cols),
+  count_zero_rows_any(injury_subset, last_four_years_cols),
+  count_zero_rows_any(injury_subset, other_cols)
+)
+resultsMatrix[4, ] <- c(
+  count_zero_rows_any(malfunction_subset, last_year_cols),
+  count_zero_rows_any(malfunction_subset, last_two_years_cols),
+  count_zero_rows_any(malfunction_subset, last_four_years_cols),
+  count_zero_rows_any(malfunction_subset, other_cols)
+)
+results_zero_2 <- as.data.frame(resultsMatrix)
+print(results_zero_2)
+```
+
+
+## Statistical Analysis
+
+Now beyond this point, we will perform Forward Selection, Logistic Regression and LDA for the subsetted datasets.
+
+The data that is subsetted at the top level is for
+ 
+ 1 - Product Field of Unknown
+ 2 - Report code of LKK
+ 3 - Issue type of 599
+ 4 - Manufacturer Contact Address 1 of 9476
+ 
+ For each of these subsets of data, Forward selection is applied on selecting levels from the following variables
+ 
+ 1 - State
+ 3 - Source Type
+ 2 - Operator
+ 3 - Last Year Variables
+ 4 - Last Two Year Variables
+ 5 - Last Four Year Variables
+ 6 - City
+ 
+ For each of the Forward selections applied, multiple variables were selected based on the variables that were significant.
+ 
+ Ultimately after the variable selection, Logistic Regression and LDA was applied for each of the top level subsets. Hence we end up with
+ 
+ 1 - 4 Logistic Regression Models
+ 2 - 4 LDA Models
+
+#Code for Forward Selection for Unknown Field
+
+#Forward Selection for unknown field by state
+
+df2_unknown_state <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_state"))
+
+summary(df2_unknown_state)
+
+df2_unknown_state <- sample_n(df2_unknown_state, size = 100000)
+
+summary(df2_unknown_state)
+
+df2_unknown_state$death_or_not <-as.numeric(df2_unknown_state$death_or_not)
+
+initial_model_state <- glm(death_or_not ~ 1, data = df2_unknown_state, family = binomial())
+
+full_model_formula_state <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_state), "death_or_not"), collapse = "+")))
+forward_selected_model_state <- stepAIC(initial_model_state, scope = list(lower = initial_model_state$formula, upper = full_model_formula_state), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_state)
+
+#! significant variables are: product.manufacturer_state_40,product.manufacturer_state_32
+
+
+coef(forward_selected_model_state)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_state)
+
+# Forward Selection for unknown field by source type
+
+df2_unknown_source <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("source_type"))
+
+df2_unknown_source <- sample_n(df2_unknown_source, size = 100000)
+
+
+df2_unknown_source$death_or_not <-as.numeric(df2_unknown_source$death_or_not)
+
+initial_model_source <- glm(death_or_not ~ 1, data = df2_unknown_source, family = binomial())
+
+full_model_formula_source <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_source), "death_or_not"), collapse = "+")))
+forward_selected_model_source <- stepAIC(initial_model_source, scope = list(lower = initial_model_source$formula, upper = full_model_formula_source), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_source)
+# ! significant variables are: source_type_3, source_type_17, source_type_11, source_type_16, source_type_5,source_type_4, source_type_15
+
+coef(forward_selected_model_source)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_source)
+
+# Forward Selection for unknown field by product operator
+
+df2_unknown_operator <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("product.product_operator"))
+
+df2_unknown_operator <- sample_n(df2_unknown_operator, size = 100000)
+
+df2_unknown_operator$death_or_not <-as.numeric(df2_unknown_operator$death_or_not)
+
+initial_model_operator <- glm(death_or_not ~ 1, data = df2_unknown_operator, family = binomial())
+
+full_model_formula_operator <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_operator), "death_or_not"), collapse = "+")))
+forward_selected_model_operator <- stepAIC(initial_model_operator, scope = list(lower = initial_model_operator$formula, upper = full_model_formula_operator), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_operator)
+# ! significant variables are: product.product_operator_41, product.product_operator_18
+
+
+coef(forward_selected_model_operator)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_operator)
+
+#Forward selection for Unknown by last year variables
+
+df2_unknown_last_year <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("last_year"))
+
+df2_unknown_last_year <- sample_n(df2_unknown_last_year, size = 100000)
+
+
+df2_unknown_last_year$death_or_not <-as.numeric(df2_unknown_last_year$death_or_not)
+
+initial_model_last_year <- glm(death_or_not ~ 1, data = df2_unknown_last_year, family = binomial())
+
+full_model_formula_last_year <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_last_year), "death_or_not"), collapse = "+")))
+forward_selected_model_last_year <- stepAIC(initial_model_last_year, scope = list(lower = initial_model_last_year$formula, upper = full_model_formula_last_year), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_last_year)
+# ! selected variables that are significant: last_year_decision_date_max_changes_in_product, last_year_company_name_num_uniq, last_year_classification1_num_uniq, last_year_reason_for_legal_announcement_most_freq
+# ! last_year_product_quantity_average_average, last_year_product_quantity_average_max, last_year_reason_for_legal_announcement_num_uniq, last_year_reason_for_legal_announcement_num_uniq
+# ! last_year_legal_announcementing_firm_most_freq, last_year_product_quantity_average_num_uniq, last_year_classification2_num_uniq , last_year_brand_name_num_uniq, last_year_brand_name_most_freq, last_year_company_name_most_freq
+
+
+coef(forward_selected_model_last_year)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_last_year)
+
+#Forward selection of Unknown for last two years
+
+
+df2_unknown_last_two_years <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("last_two_years"))
+
+df2_unknown_last_two_years <- sample_n(df2_unknown_last_two_years, size = 100000)
+
+
+df2_unknown_last_two_years$death_or_not <-as.numeric(df2_unknown_last_two_years$death_or_not)
+
+
+initial_model_last_two_years <- glm(death_or_not ~ 1, data = df2_unknown_last_two_years, family = binomial())
+
+
+full_model_formula_last_two_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_last_two_years), "death_or_not"), collapse = "+")))
+forward_selected_model_last_two_years <- stepAIC(initial_model_last_two_years, scope = list(lower = initial_model_last_two_years$formula, upper = full_model_formula_last_two_years), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_last_two_years)
+
+# ! Selected variables that are significant are as follows:
+# ! last_two_years_decision_date_max_changes_in_product  
+#! last_two_years_reason_for_legal_announcement_num_uniq     
+#! last_two_years_root_cause_description_most_freq  
+#! last_two_years_classification1_num_uniq          
+#! last_two_years_product_quantity_average_max      
+#! last_two_years_product_quantity_average_average      
+#! last_two_years_product_quantity_average_num_uniq  
+#! last_two_years_legal_announcementing_firm_num_uniq   
+#! last_two_years_root_cause_description_num_uniq       
+#! last_two_years_company_name_most_freq            
+
+
+coef(forward_selected_model_last_two_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_last_two_years)
+
+# Forward selection of unknown for last four years
+
+df2_unknown_last_four_years <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("last_four_years"))
+
+df2_unknown_last_four_years <- sample_n(df2_unknown_last_four_years, size = 100000)
+
+
+df2_unknown_last_four_years$death_or_not <-as.numeric(df2_unknown_last_four_years$death_or_not)
+
+
+initial_model_last_four_years <- glm(death_or_not ~ 1, data = df2_unknown_last_four_years, family = binomial())
+
+full_model_formula_last_four_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_last_four_years), "death_or_not"), collapse = "+")))
+forward_selected_model_last_four_years <- stepAIC(initial_model_last_four_years, scope = list(lower = initial_model_last_four_years$formula, upper = full_model_formula_last_four_years), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_last_four_years)
+#! varibales selected that are significant are as follows:
+#! last_four_years_decision_date_max_changes_in_product
+#! last_four_years_classification1_num_uniq  
+#! last_four_years_legal_announcementing_firm_num_uniq
+#! last_four_years_classification2_num_uniq               
+#! last_four_years_product_quantity_average_average       
+#! last_four_years_company_name_most_freq           
+
+
+coef(forward_selected_model_last_four_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_last_four_years)
+
+# ! Taking the variables that I did also had a reason. It was requested in the guidelines not to take any variables greater than 10 levels
+# ! but that made the present options very small as variables have many large levels.
+# ! and variables needed to be selected so that they made sense together.
+# ! We are trying to observe changes over the years and trying to find the root of the products that might be causing deaths
+# ! Root by manufacturer, source type and city.
+
+#Forward Selection of Unknown by city
+
+df2_unknown_city <- df2_unknown %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_city"))
+
+df2_unknown_city <- sample_n(df2_unknown_city, size = 100000)
+
+
+df2_unknown_city$death_or_not <-as.numeric(df2_unknown_city$death_or_not)
+
+initial_model_city <- glm(death_or_not ~ 1, data = df2_unknown_city, family = binomial())
+
+full_model_formula_city <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_unknown_city), "death_or_not"), collapse = "+")))
+forward_selected_model_city <- stepAIC(initial_model_city, scope = list(lower = initial_model_city$formula, upper = full_model_formula_city), 
+                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_city)
+# ! selected variables that are significant are as follows:
+# ! product.manufacturer_city_6271
+# ! product.manufacturer_city_2085
+# ! product.manufacturer_city_4513
+# ! product.manufacturer_city_5092
+# ! product.manufacturer_city_3153
+
+coef(forward_selected_model_city)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_city)
+
+
+summary(df1$product.field_description)
+
+ 
+## Code for Forward Selection for Prouct Code 599
+
+df2_issue <- df2 %>%
+  filter( product.issue.type_599 == "1")
+
+#Forward Selection by state
+
+df2_issue_state <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_state"))
+
+df2_issue_state <- sample_n(df2_issue_state, size = 100000)
+
+summary(df2_issue_state)
+
+df2_issue_state$death_or_not <-as.numeric(df2_issue_state$death_or_not)
+
+
+initial_model_issue_state <- glm(death_or_not ~ 1, data = df2_issue_state, family = binomial())
+
+
+full_model_formula_issue_state <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_state), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_state <- stepAIC(initial_model_issue_state, scope = list(lower = initial_model_issue_state$formula, upper = full_model_formula_issue_state), 
+                                               direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_state)
+# ! No significance
+
+coef(forward_selected_model_issue_state)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_state)
+
+#Forward selection by source type
+
+df2_issue_source <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("source_type"))
+
+df2_issue_source <- sample_n(df2_issue_source, size = 100000)
+
+summary(df2_issue_source)
+
+df2_issue_source$death_or_not <-as.numeric(df2_issue_source$death_or_not)
+
+initial_model_issue_source <- glm(death_or_not ~ 1, data = df2_issue_source, family = binomial())
+
+full_model_formula_issue_source <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_source), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_source <- stepAIC(initial_model_issue_source, scope = list(lower = initial_model_issue_source$formula, upper = full_model_formula_issue_source), 
+                                                direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_source)
+# ! No significance
+
+
+coef(forward_selected_model_issue_source)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_source)
+
+
+#Forward selection by operator
+
+df2_issue_operator <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("product.product_operator"))
+
+df2_issue_operator <- sample_n(df2_issue_operator, size = 100000)
+
+summary(df2_issue_operator)
+
+df2_issue_operator$death_or_not <-as.numeric(df2_issue_operator$death_or_not)
+
+initial_model_issue_operator <- glm(death_or_not ~ 1, data = df2_issue_operator, family = binomial())
+
+full_model_formula_issue_operator <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_operator), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_operator <- stepAIC(initial_model_issue_operator, scope = list(lower = initial_model_issue_operator$formula, upper = full_model_formula_issue_operator), 
+                                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_operator)
+# !No significance
+
+coef(forward_selected_model_issue_operator)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_operator)
+
+#Forward selection on the basis of last year variables
+
+df2_issue_last_year <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("last_year"))
+
+df2_issue_last_year <- sample_n(df2_issue_last_year, size = 100000)
+
+summary(df2_issue_last_year)
+
+df2_issue_last_year$death_or_not <-as.numeric(df2_issue_last_year$death_or_not)
+
+
+initial_model_issue_last_year <- glm(death_or_not ~ 1, data = df2_issue_last_year, family = binomial())
+
+full_model_formula_issue_last_year <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_last_year), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_last_year <- stepAIC(initial_model_issue_last_year, scope = list(lower = initial_model_issue_last_year$formula, upper = full_model_formula_issue_last_year), 
+                                                   direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_last_year)
+#!selected variables:
+#!last_year_root_cause_description_most_freq       
+#!last_year_classification0_num_uniq             
+#!last_year_product_quantity_average_num_uniq       
+#!last_year_decision_date_max_changes_in_product    
+#!last_year_reason_for_legal_announcement_num_uniq  
+#!last_year_reason_for_legal_announcement_most_freq 
+#!last_year_classification2_num_uniq                
+#!last_year_brand_name_num_uniq                     
+#!last_year_brand_name_most_freq                     
+
+
+coef(forward_selected_model_issue_last_year)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_last_year)
+
+#Forward selection on the basis of last two year variables
+
+df2_issue_last_two_years <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("last_two_years"))
+
+df2_issue_last_two_years <- sample_n(df2_issue_last_two_years, size = 100000)
+
+summary(df2_issue_last_two_years)
+
+df2_issue_last_two_years$death_or_not <-as.numeric(df2_issue_last_two_years$death_or_not)
+
+initial_model_issue_last_two_years <- glm(death_or_not ~ 1, data = df2_issue_last_two_years, family = binomial())
+
+full_model_formula_issue_last_two_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_last_two_years), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_last_two_years <- stepAIC(initial_model_issue_last_two_years, scope = list(lower = initial_model_issue_last_two_years$formula, upper = full_model_formula_issue_last_two_years), 
+                                                        direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_last_two_years)
+#!selected variables
+#!last_two_years_reason_for_legal_announcement_num_uniq  
+#!last_two_years_classification0_num_uniq                
+#!last_two_years_product_quantity_average_average         
+#!last_two_years_legal_announcementing_firm_num_uniq      
+#!last_two_years_product_quantity_average_max            
+#!last_two_years_reason_for_legal_announcement_most_freq
+#!last_two_years_root_cause_description_num_uniq       
+
+
+coef(forward_selected_model_issue_last_two_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_last_two_years)
+
+#Forward selection on the basis of last four year variables
+
+df2_issue_last_four_years <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("last_four_years"))
+
+df2_issue_last_four_years <- sample_n(df2_issue_last_four_years, size = 100000)
+
+summary(df2_issue_last_four_years)
+
+df2_issue_last_four_years$death_or_not <-as.numeric(df2_issue_last_four_years$death_or_not)
+
+initial_model_issue_last_four_years <- glm(death_or_not ~ 1, data = df2_issue_last_four_years, family = binomial())
+
+
+full_model_formula_issue_last_four_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_last_four_years), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_last_four_years <- stepAIC(initial_model_issue_last_four_years, scope = list(lower = initial_model_issue_last_four_years$formula, upper = full_model_formula_issue_last_four_years), 
+                                                         direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_last_four_years)
+#!variables selected:
+#!last_four_years_product_quantity_average_average
+#!last_four_years_classification2_num_uniq             
+#!last_four_years_legal_announcementing_firm_num_uniq    
+#!last_four_years_decision_date_average_changes_in_product
+#!last_four_years_product_quantity_average_num_uniq        
+#!last_four_years_reason_for_legal_announcement_most_freq
+
+
+coef(forward_selected_model_issue_last_four_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_last_four_years)
+
+
+
+#Forward selection on the basis of city
+
+
+df2_issue_city <- df2_issue %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_city"))
+
+df2_issue_city <- sample_n(df2_issue_city, size = 100000)
+
+summary(df2_issue_city)
+
+df2_issue_city$death_or_not <-as.numeric(df2_issue_city$death_or_not)
+
+initial_model_issue_city <- glm(death_or_not ~ 1, data = df2_issue_city, family = binomial())
+
+full_model_formula_issue_city <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_issue_city), "death_or_not"), collapse = "+")))
+forward_selected_model_issue_city <- stepAIC(initial_model_issue_city, scope = list(lower = initial_model_issue_city$formula, upper = full_model_formula_issue_city), 
+                                              direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_issue_city)
+
+#!No significance
+
+coef(forward_selected_model_issue_city)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_issue_city)
+
+
+## Code for Forward selection for Contact Address 9476
+
+
+df2_address <- df2 %>%
+  filter( manufacturer_contact_address_1_9476 == "1")
+
+
+# Forward selection by state
+
+df2_address_state <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_state"))
+
+df2_address_state <- sample_n(df2_address_state, size = 100000)
+
+summary(df2_address_state)
+
+df2_address_state$death_or_not <-as.numeric(df2_address_state$death_or_not)
+
+initial_model_address_state <- glm(death_or_not ~ 1, data = df2_address_state, family = binomial())
+
+full_model_formula_address_state <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_state), "death_or_not"), collapse = "+")))
+forward_selected_model_address_state <- stepAIC(initial_model_address_state, scope = list(lower = initial_model_address_state$formula, upper = full_model_formula_address_state), 
+                                               direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_state)
+
+#! variable selected: product.manufacturer_state_32
+
+coef(forward_selected_model_address_state)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_state)
+
+
+
+
+#forward selection on the basis of source type
+
+df2_address_source <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("source_type"))
+
+df2_address_source <- sample_n(df2_address_source, size = 100000)
+
+summary(df2_address_source)
+
+df2_address_source$death_or_not <-as.numeric(df2_address_source$death_or_not)
+
+initial_model_address_source <- glm(death_or_not ~ 1, data = df2_address_source, family = binomial())
+
+full_model_formula_address_source <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_source), "death_or_not"), collapse = "+")))
+forward_selected_model_address_source <- stepAIC(initial_model_address_source, scope = list(lower = initial_model_address_source$formula, upper = full_model_formula_address_source), 
+                                                direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_source)
+#! selected variables:
+#!source_type_17 
+#!source_type_3 
+#!source_type_11
+#!source_type_5 
+#!source_type_4 
+#!source_type_15 
+
+
+coef(forward_selected_model_address_source)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_source)
+
+
+#forward selection by operator
+
+df2_address_operator <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("product.product_operator"))
+
+df2_address_operator <- sample_n(df2_address_operator, size = 100000)
+
+summary(df2_address_operator)
+
+df2_address_operator$death_or_not <-as.numeric(df2_address_operator$death_or_not)
+
+initial_model_address_operator <- glm(death_or_not ~ 1, data = df2_address_operator, family = binomial())
+
+full_model_formula_address_operator <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_operator), "death_or_not"), collapse = "+")))
+forward_selected_model_address_operator <- stepAIC(initial_model_address_operator, scope = list(lower = initial_model_address_operator$formula, upper = full_model_formula_address_operator), 
+                                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_operator)
+
+#!nothing statistically significant
+
+coef(forward_selected_model_address_operator)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_operator)
+
+#forward selection on the basis of last year variables
+
+df2_address_last_year <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("last_year"))
+
+df2_address_last_year <- sample_n(df2_address_last_year, size = 100000)
+
+summary(df2_address_last_year)
+
+df2_address_last_year$death_or_not <-as.numeric(df2_address_last_year$death_or_not)
+
+initial_model_address_last_year <- glm(death_or_not ~ 1, data = df2_address_last_year, family = binomial())
+
+
+full_model_formula_address_last_year <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_last_year), "death_or_not"), collapse = "+")))
+forward_selected_model_address_last_year <- stepAIC(initial_model_address_last_year, scope = list(lower = initial_model_address_last_year$formula, upper = full_model_formula_address_last_year), 
+                                                   direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_last_year)
+#!variables selected:
+#!last_year_product_quantity_average_average       
+#!last_year_product_quantity_average_max            
+#!last_year_root_cause_description_num_uniq        
+#!last_year_legal_announcementing_firm_most_freq    
+#!last_year_classification1_num_uniq           
+#!last_year_brand_name_num_uniq                      
+#!last_year_reason_for_legal_announcement_num_uniq   
+#!last_year_reason_for_legal_announcement_most_freq 
+#!last_year_product_quantity_average_num_uniq    
+
+
+coef(forward_selected_model_address_last_year)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_last_year)
+
+#forward selection on the basis of last two year variables
+
+df2_address_last_two_years <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("last_two_years"))
+
+df2_address_last_two_years <- sample_n(df2_address_last_two_years, size = 100000)
+
+summary(df2_address_last_two_years)
+
+df2_address_last_two_years$death_or_not <-as.numeric(df2_address_last_two_years$death_or_not)
+
+initial_model_address_last_two_years <- glm(death_or_not ~ 1, data = df2_address_last_two_years, family = binomial())
+
+full_model_formula_address_last_two_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_last_two_years), "death_or_not"), collapse = "+")))
+forward_selected_model_address_last_two_years <- stepAIC(initial_model_address_last_two_years, scope = list(lower = initial_model_address_last_two_years$formula, upper = full_model_formula_address_last_two_years), 
+                                                        direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_last_two_years)
+#! selected variables:
+#!last_two_years_product_quantity_average_max      
+#!last_two_years_root_cause_description_num_uniq
+#!last_two_years_classification1_num_uniq             
+#!last_two_years_product_quantity_average_num_uniq     
+#!last_two_years_root_cause_description_most_freq  
+#!last_two_years_product_quantity_average_average      
+#!last_two_years_classification0_num_uniq    
+
+
+coef(forward_selected_model_address_last_two_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_last_two_years)
+
+#forward selection on the basis of last four years
+
+df2_address_last_four_years <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("last_four_years"))
+
+df2_address_last_four_years <- sample_n(df2_address_last_four_years, size = 100000)
+
+summary(df2_address_last_four_years)
+
+df2_address_last_four_years$death_or_not <-as.numeric(df2_address_last_four_years$death_or_not)
+
+initial_model_address_last_four_years <- glm(death_or_not ~ 1, data = df2_address_last_four_years, family = binomial())
+
+full_model_formula_address_last_four_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_last_four_years), "death_or_not"), collapse = "+")))
+forward_selected_model_address_last_four_years <- stepAIC(initial_model_address_last_four_years, scope = list(lower = initial_model_address_last_four_years$formula, upper = full_model_formula_address_last_four_years), 
+                                                         direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_last_four_years)
+
+#!variables selected: 
+#!last_four_years_classification0_num_uniq
+#!last_four_years_legal_announcementing_firm_num_uniq 
+#!last_four_years_product_quantity_average_average     
+
+
+coef(forward_selected_model_address_last_four_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_last_four_years)
+
+
+
+#forward selection on the basis of city
+
+
+df2_address_city <- df2_address %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_city"))
+
+df2_address_city <- sample_n(df2_address_city, size = 100000)
+
+summary(df2_address_city)
+
+df2_address_city$death_or_not <-as.numeric(df2_address_city$death_or_not)
+
+
+initial_model_address_city <- glm(death_or_not ~ 1, data = df2_address_city, family = binomial())
+
+full_model_formula_address_city <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_address_city), "death_or_not"), collapse = "+")))
+forward_selected_model_address_city <- stepAIC(initial_model_address_city, scope = list(lower = initial_model_address_city$formula, upper = full_model_formula_address_city), 
+                                              direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_address_city)
+#! variables selected:
+#!product.manufacturer_city_2085  
+#!product.manufacturer_city_4513   
+#!product.manufacturer_city_3153
+
+
+coef(forward_selected_model_address_city)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_address_city)
+
+
+## Forward Selection for Product Code LKK
+
+#subseting data for product.product_report_product_code_LKK, running forward selection with the same variables. Then followed by a regression and LDA from the selected results of forward selection.
+
+df2_report <- df2 %>%
+  filter( product.product_report_product_code_LKK == "1")
+
+#Forward Selection by state
+
+df2_report_state <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_state"))
+
+df2_report_state <- sample_n(df2_report_state, size = 100000)
+
+summary(df2_report_state)
+
+df2_report_state$death_or_not <-as.numeric(df2_report_state$death_or_not)
+
+initial_model_report_state <- glm(death_or_not ~ 1, data = df2_report_state, family = binomial())
+
+full_model_formula_report_state <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_state), "death_or_not"), collapse = "+")))
+forward_selected_model_report_state <- stepAIC(initial_model_report_state, scope = list(lower = initial_model_report_state$formula, upper = full_model_formula_report_state), 
+                                         direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_state)
+# ! selected variables:
+# ! product.manufacturer_state_40
+# ! product.manufacturer_state_48
+# ! product.manufacturer_state_63 
+
+coef(forward_selected_model_report_state)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_state)
+
+#Forward selection by source type
+
+df2_report_source <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("source_type"))
+
+df2_report_source <- sample_n(df2_report_source, size = 100000)
+
+summary(df2_report_source)
+
+df2_report_source$death_or_not <-as.numeric(df2_report_source$death_or_not)
+
+initial_model_report_source <- glm(death_or_not ~ 1, data = df2_report_source, family = binomial())
+
+full_model_formula_report_source <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_source), "death_or_not"), collapse = "+")))
+forward_selected_model_report_source <- stepAIC(initial_model_report_source, scope = list(lower = initial_model_report_source$formula, upper = full_model_formula_report_source), 
+                                               direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_source)
+
+# ! selected variables:
+# ! source_type_17
+# ! source_type_3
+# ! source_type_11 
+# ! source_type_16 
+# ! source_type_4
+# ! source_type_15 
+# ! source_type_18
+
+
+coef(forward_selected_model_report_source)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_source)
+
+
+#Forward selection by operator
+
+df2_report_operator <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("product.product_operator"))
+
+df2_report_operator <- sample_n(df2_report_operator, size = 100000)
+
+summary(df2_report_operator)
+
+df2_report_operator$death_or_not <-as.numeric(df2_report_operator$death_or_not)
+
+initial_model_report_operator <- glm(death_or_not ~ 1, data = df2_report_operator, family = binomial())
+
+full_model_formula_report_operator <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_operator), "death_or_not"), collapse = "+")))
+forward_selected_model_report_operator <- stepAIC(initial_model_report_operator, scope = list(lower = initial_model_report_operator$formula, upper = full_model_formula_report_operator), 
+                                                direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_operator)
+# ! nothing statistically significant
+
+coef(forward_selected_model_report_operator)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_operator)
+
+#forward selection on the basis of last year variables
+
+df2_report_last_year <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("last_year"))
+
+df2_report_last_year <- sample_n(df2_report_last_year, size = 100000)
+
+summary(df2_report_last_year)
+
+df2_report_last_year$death_or_not <-as.numeric(df2_report_last_year$death_or_not)
+
+initial_model_report_last_year <- glm(death_or_not ~ 1, data = df2_report_last_year, family = binomial())
+
+full_model_formula_report_last_year <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_last_year), "death_or_not"), collapse = "+")))
+forward_selected_model_report_last_year <- stepAIC(initial_model_report_last_year, scope = list(lower = initial_model_report_last_year$formula, upper = full_model_formula_report_last_year), 
+                                                  direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_last_year)
+
+#! selected variables:
+#!last_year_decision_date_max_changes_in_product    
+#! last_year_all_product_codes_most_freq            
+#! last_year_classification1_num_uniq                
+#! last_year_reason_for_legal_announcement_most_freq 
+#! last_year_reason_for_legal_announcement_num_uniq  
+#! last_year_product_quantity_average_average       
+#! last_year_product_quantity_average_max     
+#! last_year_legal_announcementing_firm_most_freq
+#! last_year_company_name_most_freq         
+
+coef(forward_selected_model_report_last_year)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_last_year)
+
+#Forward selection on the basis of last two years variables
+
+df2_report_last_two_years <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("last_two_years"))
+
+df2_report_last_two_years <- sample_n(df2_report_last_two_years, size = 100000)
+
+summary(df2_report_last_two_years)
+
+df2_report_last_two_years$death_or_not <-as.numeric(df2_report_last_two_years$death_or_not)
+
+initial_model_report_last_two_years <- glm(death_or_not ~ 1, data = df2_report_last_two_years, family = binomial())
+
+full_model_formula_report_last_two_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_last_two_years), "death_or_not"), collapse = "+")))
+forward_selected_model_report_last_two_years <- stepAIC(initial_model_report_last_two_years, scope = list(lower = initial_model_report_last_two_years$formula, upper = full_model_formula_report_last_two_years), 
+                                                   direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_last_two_years)
+#variables selected:
+#! last_two_years_decision_date_max_changes_in_product  
+#! last_two_years_reason_for_legal_announcement_num_uniq 
+#! last_two_years_classification1_num_uniq               
+#! last_two_years_legal_announcementing_firm_most_freq  
+#! last_two_years_all_product_codes_num_uniq  
+
+coef(forward_selected_model_report_last_two_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_last_two_years)
+
+#Forward selection on the basis of last four years variables
+
+df2_report_last_four_years <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("last_four_years"))
+
+df2_report_last_four_years <- sample_n(df2_report_last_four_years, size = 100000)
+
+summary(df2_report_last_four_years)
+
+df2_report_last_four_years$death_or_not <-as.numeric(df2_report_last_four_years$death_or_not)
+
+initial_model_report_last_four_years <- glm(death_or_not ~ 1, data = df2_report_last_four_years, family = binomial())
+
+full_model_formula_report_last_four_years <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_last_four_years), "death_or_not"), collapse = "+")))
+forward_selected_model_report_last_four_years <- stepAIC(initial_model_report_last_four_years, scope = list(lower = initial_model_report_last_four_years$formula, upper = full_model_formula_report_last_four_years), 
+                                                        direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_last_four_years)
+#! selected variables:
+#! last_four_years_decision_date_max_changes_in_product 
+#! last_four_years_classification1_num_uniq            
+#! last_four_years_legal_announcementing_firm_num_uniq
+
+coef(forward_selected_model_report_last_four_years)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_last_four_years)
+
+
+
+#Forward selection on the basis of city
+
+
+df2_report_city <- df2_report %>%
+  dplyr::select(death_or_not, starts_with("product.manufacturer_city"))
+
+df2_report_city <- sample_n(df2_report_city, size = 100000)
+
+summary(df2_report_city)
+
+df2_report_city$death_or_not <-as.numeric(df2_report_city$death_or_not)
+
+initial_model_report_city <- glm(death_or_not ~ 1, data = df2_report_city, family = binomial())
+
+full_model_formula_report_city <- as.formula(paste("death_or_not ~", paste(setdiff(names(df2_report_city), "death_or_not"), collapse = "+")))
+forward_selected_model_report_city <- stepAIC(initial_model_report_city, scope = list(lower = initial_model_report_city$formula, upper = full_model_formula_report_city), 
+                                                         direction = "forward", trace = FALSE)
+
+summary(forward_selected_model_report_city)
+# ! selected variables:
+# ! product.manufacturer_city_6271  
+# ! product.manufacturer_city_2085  
+# ! product.manufacturer_city_5092   
+# ! product.manufacturer_city_4513  
+
+coef(forward_selected_model_report_city)
+
+par(mfrow = c(2, 2))
+plot(forward_selected_model_report_city)
+
+## Regression for Product Field Unknown
+
+Several variables are significant predictors (indicated by stars next to the Pr(>|z|) values). For instance, product.manufacturer_city_2085, last_four_years_classification1_num_uniq, and source_type_17 show high significance levels with p-values less than 0.001, suggesting a strong association with the outcome variable.
+
+The range of residuals indicates there are outliers or points with high leverage.
+
+The model needed 18 Fisher Scoring iterations to converge, which is within normal limits but on the higher side, indicating a possibly complex model fit.
+
+The model has a high accuracy of 99.34%, but this measure alone can be misleading, especially if the data is imbalanced (which seems to be the case since the prevalence is very high at 99.338%).
+
+The Kappa of 0.0224 is very low, indicating that the model is not adding much predictive power beyond what would be expected by chance.
+
+It has near perfect sensitivity at 99.992%, meaning the model is excellent at predicting the non-event.
+
+True Negative is extremely low at 1.163%, indicating the model is almost always predicting the majority class and is poor at predicting the actual events.
+
+For Mcnemar's Test, The p-value is significant, suggesting a difference in the type of errors made by the model (false positives versus false negatives).
+
+The Area Under the ROC Curve (AUC) is 0.7117, which is fair but not excellent. The AUC measures the model's ability to discriminate between the positive and negative classes.
+
+While the logistic regression model seems to have a high accuracy and fair AUC value, it is crucial to consider the extremely imbalanced nature of the outcome variable. The model's sensitivity is high, but the specificity is very low, meaning it fails to identify the positive cases reliably. The significant predictors in the model do provide some discrimination power, but the overall performance in the context of the actual positive events is not strong. In practice, this model would predict most outcomes as the majority class, missing the critical events you're trying to predict. This highlights the importance of looking beyond accuracy in imbalanced datasets and considering other metrics such as AUC, sensitivity, specificity, and predictive values.
+
+```{r Regression for Product Field Unknown, echo= TRUE}
+# Performing logistic regression for unknown field
+
+df2$death_or_not <- as.numeric(df2$death_or_not)
+
+df_logistic_lda <- df2 %>%
+  dplyr::select(
+    `product.manufacturer_city_6271`,
+    `product.manufacturer_city_2085`,
+    `product.manufacturer_city_4513`,
+    `product.manufacturer_city_5092`,
+    `product.manufacturer_city_3153`,
+    `last_four_years_decision_date_max_changes_in_product`,
+    `last_four_years_classification1_num_uniq`,
+    `last_four_years_legal_announcementing_firm_num_uniq`,
+    `last_four_years_classification2_num_uniq`,
+    `last_four_years_product_quantity_average_average`,
+    `last_four_years_company_name_most_freq`,
+    `last_two_years_decision_date_max_changes_in_product`,
+    `last_two_years_reason_for_legal_announcement_num_uniq`,
+    `last_two_years_root_cause_description_most_freq`,
+    `last_two_years_classification1_num_uniq`,
+    `last_two_years_product_quantity_average_max`,
+    `last_two_years_product_quantity_average_average`,
+    `last_two_years_product_quantity_average_num_uniq`,
+    `last_two_years_legal_announcementing_firm_num_uniq`,
+    `last_two_years_root_cause_description_num_uniq`,
+    `last_two_years_company_name_most_freq`,
+    `last_year_decision_date_max_changes_in_product`,
+    `last_year_company_name_num_uniq`,
+    `last_year_classification1_num_uniq`,
+    `last_year_reason_for_legal_announcement_most_freq`,
+    `last_year_product_quantity_average_average`,
+    `last_year_product_quantity_average_max`,
+    `last_year_reason_for_legal_announcement_num_uniq`,
+    `last_year_legal_announcementing_firm_most_freq`,
+    `last_year_product_quantity_average_num_uniq`,
+    `last_year_classification2_num_uniq`,
+    `last_year_brand_name_num_uniq`,
+    `last_year_brand_name_most_freq`,
+    `last_year_company_name_most_freq`,
+    `product.product_operator_41`,
+    `product.product_operator_18`,
+    `source_type_3`,
+    `source_type_17`,
+    `source_type_11`,
+    `source_type_16`,
+    `source_type_5`,
+    `source_type_4`,
+    `source_type_15`,
+    `product.manufacturer_state_40`,
+    `product.manufacturer_state_32`,
+    `death_or_not`
+  )
+
+
+
+df_logistic_lda <- sample_n(df_logistic_lda, size = 65000)
+
+
+
+set.seed(123)
+index <- createDataPartition(df_logistic_lda$death_or_not, p = 0.80, list = FALSE)
+trainData <- df_logistic_lda[index, ]
+testData <- df_logistic_lda[-index, ]
+
+model_logistic <- glm(death_or_not ~ ., data = trainData, family = binomial())
+summary(model_logistic)
+
+probabilities_logistic <- predict(model_logistic, newdata = testData, type = "response")
+predictedClasses_logistic <- ifelse(probabilities_logistic > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(predictedClasses_logistic), reference = as.factor(testData$death_or_not))
+
+rocResult_logistic <- roc(response = testData$death_or_not, predictor = probabilities_logistic)
+auc(rocResult_logistic)
+plot(rocResult_logistic, main = "ROC Curve for LR")
+```
+
+
+## Regression for Product Report Code LKK
+
+The AUC for the second model is higher at 0.7447, compared to 0.7117 for the first model. This indicates an improved ability to distinguish between the two classes.
+Both models have very high accuracy (0.9934 for the first model and 0.9928 for the second), but given the prevalence rate, this could be largely due to the models predicting the majority class well.
+
+Sensitivity remains nearly perfect in both models, but this is likely due to class imbalance.
+
+The Positive Predictive Value (PPV) decreased slightly from the first to the second model, while the Negative Predictive Value (NPV) showed a significant decrease, suggesting the second model may not be as effective in predicting true negatives when the threshold is set at 0.5.
+The Balanced Accuracy is about the same for both models, indicating that neither model is particularly good when considering both sensitivity and specificity.
+
+Some variables became significant in the second model while they were not in the first, and vice versa. This could suggest differences in how the models are capturing the relationships in the data.
+
+The Residual Deviance is slightly higher in the second model, which might indicate a slightly poorer fit to the data.
+The AIC is also higher in the second model, suggesting it might not perform as well in terms of the trade-off between the goodness of fit and model complexity.
+
+Although the second model shows a higher AUC, other performance measures like specificity and PPV/NPV suggest that there may not be a practical improvement in model performance, especially in identifying the positive class. Both models exhibit signs of overfitting to the majority class due to the imbalanced dataset. The higher AUC in the second model indicates some improvement, but the real-world applicability of this improvement would depend on the specific context and costs associated with false positives and false negatives. The low specificity and kappa values in both models highlight the need for further model tuning or data sampling strategies to handle the class imbalance before these models could be reliably used for prediction.
+
+```{r Regression for Product Report Code LKK}
+# Regression
+
+df_logistic_lda_2 <- df2 %>% 
+  dplyr::select(
+    `source_type_17`
+    ,`source_type_3`
+    ,`source_type_11` 
+    ,`source_type_16` 
+    ,`source_type_4`
+    ,`source_type_15` 
+    ,`source_type_18`
+    
+    ,`product.manufacturer_state_40`
+    ,`product.manufacturer_state_48`
+    ,`product.manufacturer_state_63` 
+    
+    ,`last_year_decision_date_max_changes_in_product`    
+    ,`last_year_all_product_codes_most_freq`            
+    ,`last_year_classification1_num_uniq`                
+    ,`last_year_reason_for_legal_announcement_most_freq` 
+    ,`last_year_reason_for_legal_announcement_num_uniq`  
+    ,`last_year_product_quantity_average_average`       
+    ,`last_year_product_quantity_average_max`     
+    ,`last_year_legal_announcementing_firm_most_freq`
+    ,`last_year_company_name_most_freq`   
+    
+    ,`last_two_years_decision_date_max_changes_in_product`  
+    ,`last_two_years_reason_for_legal_announcement_num_uniq` 
+    ,`last_two_years_classification1_num_uniq`               
+    ,`last_two_years_legal_announcementing_firm_most_freq`  
+    ,`last_two_years_all_product_codes_num_uniq`  
+    
+    ,`last_four_years_decision_date_max_changes_in_product` 
+    ,`last_four_years_classification1_num_uniq`            
+    ,`last_four_years_legal_announcementing_firm_num_uniq`
+    
+    ,`product.manufacturer_city_6271`  
+    ,`product.manufacturer_city_2085`  
+    ,`product.manufacturer_city_5092`   
+    ,`product.manufacturer_city_4513`    
+    ,`death_or_not`
+  )
+
+
+df_logistic_lda_2 <- sample_n(df_logistic_lda_2, size = 65000)
+
+index <- createDataPartition(df_logistic_lda_2$death_or_not, p = 0.80, list = FALSE)
+trainData <- df_logistic_lda_2[index, ]
+testData <- df_logistic_lda_2[-index, ]
+
+model_logistic_2 <- glm(death_or_not ~ ., data = trainData, family = binomial())
+summary(model_logistic_2)
+
+probabilities_logistic_2 <- predict(model_logistic_2, newdata = testData, type = "response")
+predictedClasses_logistic_2 <- ifelse(probabilities_logistic_2 > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(predictedClasses_logistic_2), reference = as.factor(testData$death_or_not))
+
+rocResult_logistic_2 <- roc(response = testData$death_or_not, predictor = probabilities_logistic_2)
+auc(rocResult_logistic_2)
+plot(rocResult_logistic_2, main = "ROC Curve for LR 2")
+
+ 
+
+```
+
+
+## Regression For Product Issue Type 599
+
+The AUC is 0.7028, which is lower than the second model (0.7447) and slightly lower than the first model (0.7117). This suggests that LR 3 has a slightly poorer ability to discriminate between the positive and negative classes compared to the second model but is roughly similar to the first.
+
+The accuracy of all three models is very high and similar across the board (ranging from 0.9928 to 0.9934). However, this is likely influenced by the class imbalance and the models’ tendency to predict the majority class.
+
+Sensitivity is perfect (1.0000) in the third model, but specificity is 0.0000, indicating that the model predicted all test cases as the negative class and is therefore unable to correctly identify any true positive cases.
+
+The Positive Predictive Value (PPV) is consistent with the accuracy due to the prevalence of the negative class being so high. However, the Negative Predictive Value (NPV) is not calculable (NaN) because there were no true positive predictions.
+
+The Balanced Accuracy is 0.5000, the lowest of all three models, which reflects the model's inability to balance the sensitivity and specificity; it essentially performs as well as random guessing.
+
+The third model shows a different set of significant predictors compared to the previous models. This could be due to changes in the dataset, modeling process, or simply differences in how each model captures the data relationships.
+The variable last_four_years_decision_date_average_changes_in_product is highly significant in LR 3 (p < 0.0001) and appears to be a strong predictor.
+
+Based on the AUC values, LR 3 would have a ROC curve that does not perform as well as the second model but is roughly similar to the first in discriminating between the positive and negative classes.
+
+The Residual Deviance for LR 3 is higher than both previous models, which might indicate a poorer fit to the data.
+
+Comparing all three models, the second model appears to be the strongest in terms of AUC, indicating better discriminative power. However, all models struggle with specificity, as they fail to correctly identify positive cases. This is a common issue in datasets with significant class imbalance. In practice, the models are primarily predicting the majority class. Measures like AUC and Kappa, along with confusion matrix statistics, are crucial in these scenarios to understand the models' true performance beyond just accuracy. 
+
+
+```{r Regression for Product Issue Type 599, echo=TRUE}
+# Regression
+
+df_logistic_lda_3 <- df2 %>% 
+  dplyr::select(
+    `last_four_years_product_quantity_average_average`
+    ,`last_four_years_classification2_num_uniq`             
+    ,`last_four_years_legal_announcementing_firm_num_uniq`    
+    ,`last_four_years_decision_date_average_changes_in_product`
+    ,`last_four_years_product_quantity_average_num_uniq`        
+    ,`last_four_years_reason_for_legal_announcement_most_freq`
+    
+    ,`last_two_years_reason_for_legal_announcement_num_uniq`  
+    ,`last_two_years_classification0_num_uniq`                
+    ,`last_two_years_product_quantity_average_average`         
+    ,`last_two_years_legal_announcementing_firm_num_uniq`      
+    ,`last_two_years_product_quantity_average_max`            
+    ,`last_two_years_reason_for_legal_announcement_most_freq`
+    ,`last_two_years_root_cause_description_num_uniq`       
+    
+    ,`last_year_root_cause_description_most_freq`       
+    ,`last_year_classification0_num_uniq`             
+    ,`last_year_product_quantity_average_num_uniq`       
+    ,`last_year_decision_date_max_changes_in_product`    
+    ,`last_year_reason_for_legal_announcement_num_uniq`  
+    ,`last_year_reason_for_legal_announcement_most_freq` 
+    ,`last_year_classification2_num_uniq`                
+    ,`last_year_brand_name_num_uniq`                     
+    ,`last_year_brand_name_most_freq`    
+    ,`death_or_not`
+  )
+
+
+df_logistic_lda_3 <- sample_n(df_logistic_lda_3, size = 65000)
+
+set.seed(123)  # for reproducibility
+index <- createDataPartition(df_logistic_lda_3$death_or_not, p = 0.80, list = FALSE)
+trainData <- df_logistic_lda_3[index, ]
+testData <- df_logistic_lda_3[-index, ]
+
+model_logistic_3 <- glm(death_or_not ~ ., data = trainData, family = binomial())
+summary(model_logistic_3)
+
+probabilities_logistic_3 <- predict(model_logistic_3, newdata = testData, type = "response")
+predictedClasses_logistic_3 <- ifelse(probabilities_logistic_3 > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(predictedClasses_logistic_3), reference = as.factor(testData$death_or_not))
+
+
+rocResult_logistic_3 <- roc(response = testData$death_or_not, predictor = probabilities_logistic_3)
+auc(rocResult_logistic_3)
+plot(rocResult_logistic_3, main = "ROC Curve for LR 3")
+
+```
+
+## Regression for Manufacturer Address 9476
+
+Assuming the ROC curve shown reflects the model's performance, it seems similar to the AUCs of the previous models, which are in the range of 0.7028 to 0.7447. The shape of the ROC curve in the visual provided suggests that LR 4 likely has an AUC that doesn't deviate much from the AUCs of the previous models.
+
+The accuracy (0.993) is very slightly higher than that of the previous models, but given the very high prevalence of the majority class, this measure is likely not the most informative.
+
+The Positive Predictive Value remains high due to the prevalence of the majority class, and the Negative Predictive Value is perfect at 1.00000, but this is misleading since there is only one true positive case.
+
+The Kappa statistic has improved slightly to 0.0214 compared to 0 for LR 3 but is still near zero, suggesting no meaningful agreement between prediction and actuality.
+
+Balanced Accuracy is essentially the same as in LR 3, at 0.50543, indicating the model is not effective in predicting the minority class.
+
+Certain variables like product.manufacturer_city_4513, product.manufacturer_state_32, and source_type_17 are significant predictors in LR 4, reflecting different associations with the outcome compared to the previous models.
+
+Variables like source_type_11 and last_year_classification1_num_uniq show significance in influencing the response variable, which varies from previous models.
+
+The Residual Deviance for LR 4 is slightly lower than the previous models, suggesting a marginally better fit to the training data.
+
+The AIC of LR 4 is lower compared to the previous models, indicating a more favorable balance between the model's fit and complexity.
+
+Fewer iterations are needed for convergence in LR 4 (9 iterations), which could imply a more straightforward fit to the data or possibly a simpler model structure.
+
+The fourth model shows marginal improvements in some fit statistics like AIC, but it doesn't meaningfully advance in predictive performance for the minority class as evidenced by the confusion matrix and the specificity measure. All models struggle with an imbalance in the dataset, and while they can predict the majority class with near-perfect accuracy, their ability to detect the minority class is limited.
+
+The high AUC values relative to the specificity values across all models suggest that the ROC curve is not reflecting the actual practical performance of the models for predicting positive cases. It's worth noting that the AUC can sometimes be an optimistic measure of model performance in highly imbalanced datasets.
+
+```{r Regression for Manufacturer Address 9476}
+df_logistic_lda_3 <- df2 %>% 
+  dplyr::select(
+    `product.manufacturer_city_2085`  
+    ,`product.manufacturer_city_4513`   
+    ,`product.manufacturer_city_3153`
+    
+    ,`last_four_years_classification0_num_uniq`
+    ,`last_four_years_legal_announcementing_firm_num_uniq` 
+    ,`last_four_years_product_quantity_average_average`     
+    
+    ,`last_two_years_product_quantity_average_max`      
+    ,`last_two_years_root_cause_description_num_uniq`
+    ,`last_two_years_classification1_num_uniq`             
+    ,`last_two_years_product_quantity_average_num_uniq`     
+    ,`last_two_years_root_cause_description_most_freq`  
+    ,`last_two_years_product_quantity_average_average`      
+    ,`last_two_years_classification0_num_uniq`    
+    
+    ,`last_year_product_quantity_average_average`       
+    ,`last_year_product_quantity_average_max`            
+    ,`last_year_root_cause_description_num_uniq`        
+    ,`last_year_legal_announcementing_firm_most_freq`    
+    ,`last_year_classification1_num_uniq`           
+    ,`last_year_brand_name_num_uniq`                      
+    ,`last_year_reason_for_legal_announcement_num_uniq`   
+    ,`last_year_reason_for_legal_announcement_most_freq` 
+    ,`last_year_product_quantity_average_num_uniq`    
+    
+    ,`source_type_17` 
+    ,`source_type_3` 
+    ,`source_type_11`
+    ,`source_type_5` 
+    ,`source_type_4` 
+    ,`source_type_15` 
+    
+    ,`product.manufacturer_state_32`    
+    ,`death_or_not`
+  )
+
+
+df_logistic_lda_3 <- sample_n(df_logistic_lda_3, size = 65000)
+
+set.seed(123)  # for reproducibility
+index <- createDataPartition(df_logistic_lda_3$death_or_not, p = 0.80, list = FALSE)
+trainData <- df_logistic_lda_3[index, ]
+testData <- df_logistic_lda_3[-index, ]
+
+model_logistic_3 <- glm(death_or_not ~ ., data = trainData, family = binomial())
+summary(model_logistic_3)
+
+probabilities_logistic_3 <- predict(model_logistic_3, newdata = testData, type = "response")
+predictedClasses_logistic_3 <- ifelse(probabilities_logistic_3 > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(predictedClasses_logistic_3), reference = as.factor(testData$death_or_not))
+
+rocResult_logistic_3 <- roc(response = testData$death_or_not, predictor = probabilities_logistic_3)
+auc(rocResult_logistic_3)
+plot(rocResult_logistic_3, main = "ROC Curve for LR 4")
+
+
+
+```
+
+
+
+##LDA for Product Field Unknown
+
+The ROC curve indicates a fair level of discrimination with an Area Under Curve (AUC) of 0.7308. This is a measure of the model's ability to correctly classify the positive class. The AUC is higher than the third logistic regression model (LR 3) which had an AUC of 0.7028, but lower than the second logistic regression model (LR 2) with an AUC of 0.7447.
+
+The overall accuracy of the LDA model is 98.04%, which is lower than all the logistic regression models (LR 1-4), which had accuracies ranging from 99.28% to 99.34%. Despite the high accuracy, it's important to consider the class imbalance which likely inflates this metric.
+
+Specificity or True Negative Rate is very low at 9.783%, which is consistent with the other models and indicates a continued difficulty in correctly identifying the positive class.
+
+The Positive Predictive Value (PPV) is high at 99.353%, similar to the logistic regression models, reflecting the class imbalance.
+
+The Balanced Accuracy is 54.225%, which reflects the model's limited ability to balance sensitivity and specificity and is the lowest among the models we've seen.
+
+Compared to the logistic regression models, the LDA model has a slightly better AUC than LR 3 but not as good as LR 2. While the accuracy is lower, this may not necessarily be a disadvantage, considering the severe class imbalance in the dataset. The LDA model does seem to recognize a few more true positives, as seen in the lower sensitivity and higher NPV, but this is at the expense of a larger number of false positives, leading to lower specificity and PPV.
+
+This model, like the logistic regression models, shows a high degree of class imbalance influence, as indicated by the high accuracy but low specificity. The higher AUC suggests some potential in the LDA model for discrimination between the classes, but there's still room for improvement, especially in correctly identifying the minority class. Techniques such as resampling the data, using different thresholds for classification, or employing cost-sensitive learning may help improve performance in future iterations.
+
+```{r LDA for Product Field Unknown, echo=TRUE}
+# Performing LDA for unknown field
+
+
+lda_model <- lda(death_or_not ~ ., data = trainData)
+
+predictions_lda <- predict(lda_model, testData)
+predictedClasses_lda <- predictions_lda$class
+posteriorProbabilities_lda <- predictions_lda$posterior[,2]  # Probabilities of class 1
+
+confusionMatrix(data = as.factor(predictedClasses_lda), reference = as.factor(testData$death_or_not))
+
+roc_result_lda <- roc(response = testData$death_or_not, predictor = posteriorProbabilities_lda)
+auc(roc_result_lda)
+plot(roc_result_lda, main = "ROC Curve for LDA")
+
+```
+
+
+## LDA for Product Report Code LKK
+
+The AUC remains at 0.7308, indicating no change in the model's ability to discriminate between the two classes compared to the first LDA model.
+
+The accuracy is unchanged at 98.04%, and all other metrics from the confusion matrix (sensitivity, specificity, PPV, NPV, prevalence, detection rate, detection prevalence, and balanced accuracy) are the same.
+
+The McNemar's Test p-value remains highly significant, suggesting an imbalance between the number of false negatives and false positives, which persists from the first LDA model.
+
+When compared to the logistic regression models (LR 1-4), the accuracy of both LDA models is lower. However, in terms of AUC, both LDA models are higher than the AUC of LR 3 (0.7028) and close to LR 1 (0.7117), but not as high as LR 2 (0.7447). This indicates that the discriminative ability of LDA is not as strong as the best logistic regression model.
+
+The sensitivity and specificity of both LDA models are lower than those reported in the logistic regression models, which had near-perfect sensitivity but also very low specificity. This suggests that LDA models may be slightly better at detecting the minority class but still suffer from the same issue of low specificity.
+
+The PPV is high in all models due to the class imbalance, which leads to a high number of true negatives.
+
+The NPV is very low in all models, but the NPVs in the logistic regression models are not provided for direct comparison.
+
+Given that the metrics for both LDA models are identical, it raises the question of whether there was a variation in the model inputs or parameters. If the inputs to both LDA models were the same, the identical metrics suggest that the models have converged to the same solution.
+
+In summary, the LDA models are consistent with each other but do not exhibit a marked improvement over the logistic regression models in terms of the ability to predict the minority class correctly. All models indicate high accuracy, but this is a misleading metric due to the class imbalance, and they all suffer from low specificity, indicating challenges in correctly identifying the positive class in an imbalanced dataset.
+
+```{r LDA for Product Report Code LKK, echo = TRUE}
+#LDA
+
+lda_model_2 <- lda(death_or_not ~ ., data = trainData)
+
+predictions_lda_2 <- predict(lda_model_2, testData)
+predictedClasses_lda_2 <- predictions_lda_2$class
+posteriorProbabilities_lda_2 <- predictions_lda_2$posterior[,2]  # Probabilities of class 1
+
+confusionMatrix(data = as.factor(predictedClasses_lda_2), reference = as.factor(testData$death_or_not))
+
+roc_result_lda_2 <- roc(response = testData$death_or_not, predictor = posteriorProbabilities_lda_2)
+auc(roc_result_lda_2)
+plot(roc_result_lda_2, main = "ROC Curve for LDA 2")
+
+
+```
+
+## LDA for Product Issue Type 599
+
+The AUC for LDA 3 is 0.7308, which is exactly the same as both LDA 1 and LDA 2. This suggests no change in the model's ability to discriminate between the two classes.
+
+LDA 3 maintains an accuracy of 98.04%, identical to LDA 1 and LDA 2
+ 
+At 98.67%, LDA 3 has high sensitivity, the same as the previous two LDA models
+
+The specificity remains low at 9.783%, indicating the model continues to struggle with identifying the positive class.
+
+NPV remains low at 4.972%, indicating a poor performance in predicting true positives.
+
+The Kappa statistic value is 0.0571, indicating the same level of agreement between the predicted and actual values as LDA 1 and LDA 2.
+
+At 54.225%, the balanced accuracy, which averages sensitivity and specificity, suggests limited performance
+
+Compared to the logistic regression models (LR 1-4), the accuracies of the LDA models are slightly lower, but this difference is minimal.
+
+The AUC of LDA 1, LDA 2, and LDA 3 is higher than that of LR 3 (0.7028), similar to LR 1 (0.7117), but not as high as LR 2 (0.7447), indicating that while the LDA models don't have the highest AUC, they are relatively consistent.
+
+All the LDA models show near-perfect sensitivity but very low specificity, similar to the logistic regression models, suggesting a common difficulty in positively identifying the minority class across all models.
+
+In summary, across all LDA models and compared to the logistic regression models, we see high sensitivity and PPV but low specificity and NPV. This pattern indicates a strong influence of class imbalance and highlights the need for techniques that address the imbalance or alter the decision threshold to improve minority class detection.
+
+```{LDA for Product Issue Type 599}
+#LDA
+
+lda_model_3 <- lda(death_or_not ~ ., data = trainData)
+
+predictions_lda_3 <- predict(lda_model_3, testData)
+predictedClasses_lda_3 <- predictions_lda_3$class
+posteriorProbabilities_lda_3 <- predictions_lda_3$posterior[,2]  # Probabilities of class 1
+
+confusionMatrix(data = as.factor(predictedClasses_lda_3), reference = as.factor(testData$death_or_not))
+
+roc_result_lda_3 <- roc(response = testData$death_or_not, predictor = posteriorProbabilities_lda_3)
+auc(roc_result_lda_3)
+plot(roc_result_lda_3, main = "ROC Curve for LDA 3")
+
+summary(lda_model_3)
+
+```
+
+## LDA for Manufacturer 1 Contact Address 9476
+
+The AUC for LDA 4 is 0.7308, consistent with the AUC values reported for LDA 1, LDA 2, and LDA 3. This suggests that all LDA models are equal in terms of discrimination ability between the classes.
+
+All four LDA models have the same accuracy (0.9804), which is slightly lower than the accuracies reported for the logistic regression models (LR 1-4), which were all above 0.9928.
+
+Sensitivity is consistent at 0.98667 across all LDA models, indicating a high true positive rate for the majority class.
+ 
+Specificity remains low at 0.09783 for all LDA models, indicating poor performance in correctly identifying the minority class.
+
+The PPV is high at 0.99353, as is common in datasets with a significant class imbalance where the model correctly predicts the majority class.
+
+The NPV is very low at 0.04972, underscoring the models' difficulty in accurately predicting positive cases in the minority class.
+
+The balanced accuracy of 0.54225 for all LDA models indicates that the models do not perform well in a balanced manner for both classes.
+
+The logistic regression models (LR 1-4) showed slightly better accuracy but also struggled with low specificity. This pattern suggests that while logistic regression models are better at predicting the majority class without error, they are not necessarily more effective at identifying the minority class.
+
+
+The AUC for the logistic regression models varied, with LR 2 showing the highest AUC at 0.7447 and LR 3 the lowest at 0.7028. The LDAs' AUC values are in the lower range of these results, suggesting that while the LDAs have some ability to discriminate between classes, they are not the top performers.
+
+The identical results across the four LDA models suggest that either the models are being trained on the same features and data and thus arriving at the same statistical conclusions, or there may be an issue with the analysis or reporting process. It is unusual for different models or iterations to yield exactly the same metrics, especially in different runs, unless the underlying data and model structure are identical.
+
+
+```{r LDA for Manufacturer 1 Contact Address 9476}
+
+#LDA
+
+lda_model_4 <- lda(death_or_not ~ ., data = trainData)
+
+predictions_lda_4 <- predict(lda_model_4, testData)
+predictedClasses_lda_4 <- predictions_lda_4$class
+posteriorProbabilities_lda_4 <- predictions_lda_4$posterior[,2]  # Probabilities of class 1
+
+confusionMatrix(data = as.factor(predictedClasses_lda_4), reference = as.factor(testData$death_or_not))
+
+roc_result_lda_4 <- roc(response = testData$death_or_not, predictor = posteriorProbabilities_lda_4)
+auc(roc_result_lda_4)
+plot(roc_result_lda_4, main = "ROC Curve for LDA 4")
+```
+
+## Final Remarks
+
+All models, both LDA and logistic regression, show the impact of class imbalance with high accuracy and PPV, but poor specificity and NPV. Despite high accuracies, the practical usefulness of these models is limited without addressing the imbalance or employing techniques to improve minority class prediction.
